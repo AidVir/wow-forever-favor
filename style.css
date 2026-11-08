@@ -171,3 +171,7 @@ table.shop, table.writs { min-width: 560px; }
 .plan-sum .pick b { color: var(--accent); }
 td small { display: block; font-size: 11px; color: var(--muted); }
 .profit { color: var(--good); font-weight: 700; }
+
+.better { color: var(--good); }
+.better small { color: var(--muted); }
+table.steps td small { white-space: nowrap; }

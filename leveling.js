@@ -197,6 +197,15 @@ function plan() {
   return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList };
 }
 
+// Vendor and AH value of a step's crafts, side by side, each with the step's net cost under it.
+function sellCells(st) {
+  if (!st.r.item) return `<td class="num"><span class="muted">—</span></td><td class="num"><span class="muted">—</span></td>`;
+  const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>net ${gold(st.cost - val)}${note || ""}</small></td>`;
+  const ahBetter = st.ah > st.vendor;
+  return cell(st.vendor, !ahBetter && st.vendor > 0)
+    + cell(st.ah, ahBetter, st.onAh ? ` · ${st.onAh} on AH${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : " · not listed");
+}
+
 function render() {
   if (!PRICES || !REC) return;
   const prof = profData();
@@ -229,13 +238,19 @@ function render() {
       <td class="num rng">${st.from}–${st.to}</td>
       <td><b>${st.crafts} × ${name}</b> ${tags}<div class="meta">${reag} · learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></div></td>
       <td class="num">${gold(st.cost)}</td>
-      <td class="num">${r.item ? gold(st.ah) + (st.onAh ? `<small>${st.onAh} on AH${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}</small>` : "<small>vendor</small>") : '<span class="muted">—</span>'}</td>
+      ${sellCells(st)}
       <td class="num"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan">✕</button></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="5" class="empty">Nothing to plan.</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
   $("#sell").innerHTML = p.sellList.length
-    ? p.sellList.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${e.n.toLocaleString("en-GB")}</td><td class="num">${gold(minPrice(BOOK0, e.id))}</td><td class="num">${gold(e.unit * e.n)}</td><td class="num">${listed(BOOK0, e.id).toLocaleString("en-GB")}</td></tr>`).join("")
-    : `<tr><td colspan="5" class="empty">Nothing in this route sells above vendor price right now.</td></tr>`;
+    ? p.sellList.map(e => {
+        const vend = ITEMS[e.id]?.s || 0;
+        return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${e.n.toLocaleString("en-GB")}</td>
+          <td class="num">${gold(vend)}</td><td class="num">${gold(minPrice(BOOK0, e.id))}</td>
+          <td class="num">${gold(vend * e.n)}</td><td class="num better">${gold(e.unit * e.n)}</td>
+          <td class="num">${listed(BOOK0, e.id).toLocaleString("en-GB")}</td></tr>`;
+      }).join("")
+    : `<tr><td colspan="7" class="empty">Nothing in this route sells above vendor price right now.</td></tr>`;
 
   const shop = p.shopping.filter(e => e.ah || e.vendor).sort((a, b) => (b.ah + b.vendor) - (a.ah + a.vendor));
   $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td>

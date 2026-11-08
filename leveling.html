@@ -63,7 +63,7 @@
     <div id="stuck"></div>
     <div class="table-scroll">
       <table class="steps">
-        <thead><tr><th class="num">Skill</th><th>Craft</th><th class="num">Cost</th><th class="num">Sells for</th><th></th></tr></thead>
+        <thead><tr><th class="num">Skill</th><th>Craft</th><th class="num">Cost</th><th class="num">Vendor</th><th class="num">AH (est.)</th><th></th></tr></thead>
         <tbody id="steps"></tbody>
       </table>
     </div>
@@ -75,7 +75,7 @@
   <section class="panel">
     <div class="panel-head"><h2>Sell on the auction house</h2></div>
     <div class="table-scroll">
-      <table class="shop"><thead><tr><th>Crafted item</th><th class="num">Sell</th><th class="num">Cheapest listing</th><th class="num">You get (after 5% cut)</th><th class="num">Listed now</th></tr></thead><tbody id="sell"></tbody></table>
+      <table class="shop"><thead><tr><th>Crafted item</th><th class="num">Sell</th><th class="num">Vendor each</th><th class="num">AH each</th><th class="num">Vendor total</th><th class="num">AH total (−5%)</th><th class="num">Listed now</th></tr></thead><tbody id="sell"></tbody></table>
     </div>
     <p class="fine">The API shows what is listed, not what sells, so AH sales are an estimate: the cheapest current listing minus the 5% auction cut, for at most a quarter of the units currently listed. Everything else is counted at vendor price. Both totals are shown above; "Plan the route for" decides which one the route optimises.</p>
   </section>
