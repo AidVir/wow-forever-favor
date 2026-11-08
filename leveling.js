@@ -9,7 +9,7 @@ const state = {
   to: store.get("lv:to", 300),
   patterns: (v => typeof v === "string" ? v : "all")(store.get("lv:patterns", "all")),
   time: store.get("lv:time", 0),
-  sellback: store.get("lv:sellback", true),
+  sell: (v => ["ah", "vendor", "none"].includes(v) ? v : "ah")(store.get("lv:sell", "ah")),
   mining: store.get("lv:mining", false),
   stationsOff: new Set(store.get("lv:stationsOff", null) ?? [...RARE_STATIONS]),
   excluded: new Set(store.get("lv:excluded", [])),
@@ -65,6 +65,27 @@ function patternCost(book, r) {
   return best || { cost: 0, unknown: true };
 }
 
+// --- selling the results -------------------------------------------------------------
+// Blizzard's API only shows listings, not sales, so AH resale is an estimate: the cheapest current
+// listing minus the 5% AH cut, for at most ~25% of the units currently listed (what the market can
+// plausibly absorb). Anything beyond that, or anything not listed, is valued at the vendor price.
+const AH_CUT = 0.95, ABSORB = 0.25;
+function saleModel(book0) {
+  const sold = new Map();
+  const ahUnit = id => { const p = minPrice(book0, id); return p == null ? null : Math.floor(p * AH_CUT); };
+  const cap = id => { const n = listed(book0, id); return n ? Math.max(2, Math.floor(n * ABSORB)) : 0; };
+  // value of selling `units` more of item id; commit=true records the sale
+  function value(id, units, commit) {
+    const vend = ITEMS[id]?.s || 0;
+    const unit = ahUnit(id);
+    const room = unit != null && unit > vend ? Math.max(0, cap(id) - (sold.get(id) || 0)) : 0;
+    const onAh = Math.min(units, room);
+    if (commit && onAh) sold.set(id, (sold.get(id) || 0) + onAh);
+    return { vendor: vend * units, ah: onAh * unit + (units - onAh) * vend, onAh, unit };
+  }
+  return { value, sold, ahUnit };
+}
+
 function plan() {
   const prof = profData();
   BOOK0 = makeBook(PRICES, state.faction, state.neutral);
@@ -73,7 +94,16 @@ function plan() {
   const helpers = state.mining && prof.name !== "Mining" ? REC.professions.find(p => p.name === "Mining").recipes.map(r => ({ ...r, helper: true })) : [];
   for (const r of [...prof.recipes, ...helpers]) if (r.item) (makers.get(r.item) || makers.set(r.item, []).get(r.item)).push(r);
   const learned = new Map(); // recipe id -> pattern info (charged once)
-  const steps = []; const shopping = new Map(); let total = 0, resale = 0, stuck = null;
+  const steps = []; const shopping = new Map(); let total = 0, stuck = null;
+  const sales = saleModel(BOOK0);
+  let resaleVendor = 0, resaleAh = 0;
+  // record selling the output of n crafts of a step
+  function sellOutput(st, n) {
+    if (!st.r.item || n <= 0) return;
+    const v = sales.value(st.r.item, st.r.qty * n, true);
+    st.vendor += v.vendor; st.ah += v.ah; st.onAh += v.onAh;
+    resaleVendor += v.vendor; resaleAh += v.ah;
+  }
   const timeCost = Math.max(0, Number(state.time) || 0) * 100; // silver per craft -> copper
 
   // buy + consume reagents for n crafts of r at skill s; returns gold spent
@@ -101,7 +131,7 @@ function plan() {
     const need = Math.max(1, Math.round(st.exp)) - st.crafts;
     if (need > 0) {
       const spent = craft(st.r, need, st.to - 1);
-      st.crafts += need; st.cost += spent; total += spent; resale += st.back * need;
+      st.crafts += need; st.cost += spent; total += spent; sellOutput(st, need);
     }
   }
 
@@ -118,10 +148,18 @@ function plan() {
         cost += a.cost; plan = plan.concat(a.plan);
       }
       if (cost == null) continue;
-      // vendor value of the result, capped so "almost free" crafts don't win with 100 green crafts per point
-      const back = state.sellback && r.item ? Math.min((ITEMS[r.item]?.s || 0) * r.qty, cost * 0.75) : 0;
+      // Credit for the result in the chosen selling mode. Vendor credit is capped so "almost free" crafts
+      // don't win with 100 green crafts per point; AH credit is limited by what the market can absorb.
+      let back = 0;
+      if (r.item && state.sell !== "none") {
+        const v = sales.value(r.item, r.qty, false);
+        back = state.sell === "ah" && v.onAh > 0 ? v.ah : Math.min(v.vendor, cost * 0.75);
+      }
       const pat = learned.has(r.id) ? 0 : patternCost(book, r).cost;
-      const per = ((cost - back + timeCost) / c + pat / 5) / r.ups; // amortise a pattern over ~5 points
+      // cost per skill point. A profitable craft (net < 0) is scored by its profit per craft, not divided by
+      // the skill-up chance, otherwise low-chance green recipes would look "better" the less they level you.
+      const net = cost - back;
+      const per = ((net >= 0 ? net / c : net) + timeCost / c + pat / 5) / r.ups; // amortise a pattern over ~5 points
       if (!best || per < best.per) best = { r, per, cost, back, c, plan };
     }
     if (!best) {
@@ -142,7 +180,7 @@ function plan() {
     let last = steps[steps.length - 1];
     if (!last || last.r !== r) {
       settle(last);
-      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, back: best.back, pattern: learned.get(r.id) };
+      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id) };
       steps.push(last);
     }
     // buy the whole crafts this step has "earned" so far, so later prices reflect what we bought
@@ -150,12 +188,13 @@ function plan() {
     const due = Math.floor(last.exp + 1e-9) - last.crafts;
     if (due > 0) {
       const spent = craft(r, due, s);
-      last.crafts += due; last.cost += spent; total += spent; resale += best.back * due;
+      last.crafts += due; last.cost += spent; total += spent; sellOutput(last, due);
     }
     s += r.ups;
   }
   settle(steps[steps.length - 1]);
-  return { steps, shopping: [...shopping.values()], total, resale, stuck, book };
+  const sellList = [...sales.sold.entries()].map(([id, n]) => ({ id, n, unit: sales.ahUnit(id) })).sort((a, b) => b.n * b.unit - a.n * a.unit);
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList };
 }
 
 function render() {
@@ -168,10 +207,10 @@ function render() {
 
   const t0 = performance.now();
   const p = plan();
-  const net = p.total - p.resale;
   $("#summary").innerHTML = `
     <div><span class="eyebrow">Materials${state.patterns !== "trainer" ? " + patterns" : ""}</span><b>${gold(p.total)}</b></div>
-    ${state.sellback ? `<div><span class="eyebrow">Vendor the results</span><b>−${gold(p.resale)}</b></div><div><span class="eyebrow">Net cost</span><b>${gold(net)}</b></div>` : ""}
+    <div class="${state.sell === "vendor" ? "pick" : ""}"><span class="eyebrow">Net if you vendor everything</span><b>${gold(p.total - p.resaleVendor)}</b><small>vendor sales ${gold(p.resaleVendor)}</small></div>
+    <div class="${state.sell === "ah" ? "pick" : ""}"><span class="eyebrow">Net if you sell on the AH</span><b>${gold(p.total - p.resaleAh)}</b><small>AH + vendor sales ${gold(p.resaleAh)} (est.)</small></div>
     <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
     <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : state.to}</b></div>`;
   $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>` : "";
@@ -190,9 +229,13 @@ function render() {
       <td class="num rng">${st.from}–${st.to}</td>
       <td><b>${st.crafts} × ${name}</b> ${tags}<div class="meta">${reag} · learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></div></td>
       <td class="num">${gold(st.cost)}</td>
+      <td class="num">${r.item ? gold(st.ah) + (st.onAh ? `<small>${st.onAh} on AH${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}</small>` : "<small>vendor</small>") : '<span class="muted">—</span>'}</td>
       <td class="num"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan">✕</button></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="4" class="empty">Nothing to plan.</td></tr>`;
+  }).join("") || `<tr><td colspan="5" class="empty">Nothing to plan.</td></tr>`;
+  $("#sell").innerHTML = p.sellList.length
+    ? p.sellList.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${e.n.toLocaleString("en-GB")}</td><td class="num">${gold(minPrice(BOOK0, e.id))}</td><td class="num">${gold(e.unit * e.n)}</td><td class="num">${listed(BOOK0, e.id).toLocaleString("en-GB")}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">Nothing in this route sells above vendor price right now.</td></tr>`;
 
   const shop = p.shopping.filter(e => e.ah || e.vendor).sort((a, b) => (b.ah + b.vendor) - (a.ah + a.vendor));
   $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td>
@@ -211,7 +254,7 @@ function bind() {
   $("#to").oninput = e => set("to", Math.max(2, Math.min(300, Number(e.target.value) || 300)));
   $("#patterns").onchange = e => set("patterns", e.target.value);
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
-  $("#sellback").onchange = e => set("sellback", e.target.checked);
+  $("#sellmode").onchange = e => set("sell", e.target.value);
   $("#mining").onchange = e => set("mining", e.target.checked);
   $("#neutral").onchange = e => set("neutral", e.target.checked);
   $("#stations").onchange = e => {
@@ -230,7 +273,7 @@ async function load() {
     $("#prof").innerHTML = REC.professions.filter(p => p.name !== "Mining").map(p => `<option ${p.name === state.prof ? "selected" : ""}>${p.name}</option>`).join("");
     if (!REC.professions.some(p => p.name === state.prof)) state.prof = REC.professions[0].name;
     $("#from").value = state.from; $("#to").value = state.to;
-    $("#patterns").value = state.patterns; $("#time").value = state.time; $("#sellback").checked = state.sellback; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
+    $("#patterns").value = state.patterns; $("#time").value = state.time; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
     $("#status").innerHTML = `Prices from the ${PRICES.region} ${PRICES.ruleset.name} auction houses, updated <b>${ago(PRICES.updated)}</b>. Recipes from WoW Forever client build ${REC.build}.`;
     bind(); render();
   } catch (e) {

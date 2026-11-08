@@ -165,3 +165,9 @@ table.shop, table.writs { min-width: 560px; }
 .env + .env { border-top: 1px solid var(--line); }
 .env-val { font-weight: 700; }
 .env-val span { font-weight: 500; color: var(--muted); font-size: 13px; }
+
+.plan-sum > div { display: grid; align-content: start; }
+.plan-sum small { font-size: 12px; color: var(--muted); }
+.plan-sum .pick b { color: var(--accent); }
+td small { display: block; font-size: 11px; color: var(--muted); }
+.profit { color: var(--good); font-weight: 700; }

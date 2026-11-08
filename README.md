@@ -6,7 +6,8 @@ Three tools priced from the EU **PvP** ruleset auction houses (Alliance, Horde, 
 
 - **Merchant's Favor** (`index.html`): cheapest Waylaid Crate to fill per Favor.
 - **Profession leveling** (`leveling.html`): cheapest 1–300 route for Alchemy, Blacksmithing, Enchanting,
-  Engineering, Leatherworking, Tailoring, Cooking and First Aid, with shopping list.
+  Engineering, Leatherworking, Tailoring, Cooking and First Aid, with shopping list and an estimate of
+  what the crafts sell for on the AH (shown next to the vendor-only cost).
 - **Craftsman's Writs** (`writs.html`): all 150 writs ranked by gold per 100 trade-faction reputation.
 
 Prices are checked every 10 minutes; Blizzard publishes a new auction snapshot about once an hour,
