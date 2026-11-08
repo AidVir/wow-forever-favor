@@ -49,6 +49,14 @@
         <option value="none">Ignoring what crafts sell for</option>
       </select>
     </div>
+    <div class="ctl">
+      <label for="wait" title="How long you'll keep relisting crafts on the AH">Time to sell on the AH</label>
+      <select id="wait">
+        <option value="1">1 day</option>
+        <option value="3">3 days</option>
+        <option value="7">7 days</option>
+      </select>
+    </div>
     <div class="ctl"><label for="time" title="Adds this much per craft so the plan prefers fewer crafts">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="0"></div>
     <div class="ctl">
       <span class="lbl">Options</span>
@@ -75,9 +83,10 @@
   <section class="panel">
     <div class="panel-head"><h2>Sell on the auction house</h2></div>
     <div class="table-scroll">
-      <table class="shop"><thead><tr><th>Crafted item</th><th class="num">Sell</th><th class="num">Vendor each</th><th class="num">AH each</th><th class="num">Vendor total</th><th class="num">AH total (−5%)</th><th class="num">Listed now</th></tr></thead><tbody id="sell"></tbody></table>
+      <table class="shop"><thead><tr><th>Crafted item</th><th class="num">Made</th><th class="num">Sells per day</th><th class="num">Put on AH</th><th class="num">AH each (−5%)</th><th class="num">Vendor each</th><th class="num">Value</th></tr></thead><tbody id="sell"></tbody></table>
     </div>
-    <p class="fine">The API shows what is listed, not what sells, so AH sales are an estimate: the cheapest current listing minus the 5% auction cut, for at most a quarter of the units currently listed. Everything else is counted at vendor price. Both totals are shown above; "Plan the route for" decides which one the route optimises.</p>
+    <p class="hint" id="salesnote"></p>
+    <p class="fine">Blizzard's API lists auctions but never says what sold. Every hour the price job compares the new snapshot with the previous one: a listing with 2+ hours left that is gone an hour later can't have expired, so it was bought (or cancelled by its seller, which this can't tell apart). That gives units sold per day for each item. The plan only puts on the AH what you could sell at half of that daily demand over the time you pick, priced at the lower of the cheapest listing now and the average price items actually sold at, minus the 5% cut. The rest is vendored. Deposits and undercutting wars are not included, so the AH total is still an estimate; the vendor total is guaranteed.</p>
   </section>
 
   <section class="panel">

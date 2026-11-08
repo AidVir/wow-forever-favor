@@ -10,6 +10,7 @@ const state = {
   patterns: (v => typeof v === "string" ? v : "all")(store.get("lv:patterns", "all")),
   time: store.get("lv:time", 0),
   sell: (v => ["ah", "vendor", "none"].includes(v) ? v : "ah")(store.get("lv:sell", "ah")),
+  wait: (v => [1, 3, 7].includes(v) ? v : 3)(store.get("lv:wait", 3)),
   mining: store.get("lv:mining", false),
   stationsOff: new Set(store.get("lv:stationsOff", null) ?? [...RARE_STATIONS]),
   excluded: new Set(store.get("lv:excluded", [])),
@@ -66,24 +67,45 @@ function patternCost(book, r) {
 }
 
 // --- selling the results -------------------------------------------------------------
-// Blizzard's API only shows listings, not sales, so AH resale is an estimate: the cheapest current
-// listing minus the 5% AH cut, for at most ~25% of the units currently listed (what the market can
-// plausibly absorb). Anything beyond that, or anything not listed, is valued at the vendor price.
-const AH_CUT = 0.95, ABSORB = 0.25;
+// Blizzard's API shows listings, not sales. The price job compares hourly snapshots and counts
+// listings that disappeared before they could expire (data/sales.json), which gives units sold per
+// day. You can expect to sell at most your share of that demand while you keep relisting; the price
+// is the lower of the cheapest listing now and the average price things actually sold at, minus the
+// 5% cut. Without enough sales history an item counts at vendor price only.
+const AH_CUT = 0.95, SHARE = 0.5, MIN_HOURS = 6;
+let SALES = null;
+function salesInfo() {
+  const fs = [state.faction, ...(state.neutral ? ["neutral"] : [])].map(f => SALES?.factions?.[f]).filter(Boolean);
+  const hours = fs.length ? Math.min(...fs.map(f => f.hours || 0)) : 0;
+  return { fs, hours, ok: hours >= MIN_HOURS };
+}
 function saleModel(book0) {
-  const sold = new Map();
-  const ahUnit = id => { const p = minPrice(book0, id); return p == null ? null : Math.floor(p * AH_CUT); };
-  const cap = id => { const n = listed(book0, id); return n ? Math.max(2, Math.floor(n * ABSORB)) : 0; };
+  const info = salesInfo();
+  const sold = new Map(), made = new Map();
+  const stats = new Map();
+  const stat = id => {
+    if (stats.has(id)) return stats.get(id);
+    let units = 0, value = 0;
+    for (const f of info.fs) for (const [, n, v] of f.items[id] || []) { units += n; value += v; }
+    const s = { perDay: info.hours ? units / info.hours * 24 : 0, avg: units ? value / units : null };
+    stats.set(id, s); return s;
+  };
+  const ahUnit = id => {
+    const now = minPrice(book0, id), avg = stat(id).avg;
+    const p = now != null && avg != null ? Math.min(now, avg) : now ?? avg;
+    return p == null ? null : Math.floor(p * AH_CUT);
+  };
+  const cap = id => info.ok ? Math.floor(stat(id).perDay * state.wait * SHARE) : 0;
   // value of selling `units` more of item id; commit=true records the sale
   function value(id, units, commit) {
     const vend = ITEMS[id]?.s || 0;
     const unit = ahUnit(id);
     const room = unit != null && unit > vend ? Math.max(0, cap(id) - (sold.get(id) || 0)) : 0;
     const onAh = Math.min(units, room);
-    if (commit && onAh) sold.set(id, (sold.get(id) || 0) + onAh);
+    if (commit) { made.set(id, (made.get(id) || 0) + units); if (onAh) sold.set(id, (sold.get(id) || 0) + onAh); }
     return { vendor: vend * units, ah: onAh * unit + (units - onAh) * vend, onAh, unit };
   }
-  return { value, sold, ahUnit };
+  return { value, sold, made, ahUnit, stat, info };
 }
 
 function plan() {
@@ -193,17 +215,24 @@ function plan() {
     s += r.ups;
   }
   settle(steps[steps.length - 1]);
-  const sellList = [...sales.sold.entries()].map(([id, n]) => ({ id, n, unit: sales.ahUnit(id) })).sort((a, b) => b.n * b.unit - a.n * a.unit);
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList };
+  const sellList = [...sales.made.entries()].map(([id, made]) => {
+    const n = sales.sold.get(id) || 0, unit = sales.ahUnit(id), vend = ITEMS[id]?.s || 0;
+    return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
+  }).sort((a, b) => b.value - a.value);
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList, salesInfo: sales.info, stat: sales.stat };
 }
 
 // Vendor and AH value of a step's crafts, side by side, each with the step's net cost under it.
-function sellCells(st) {
+const perDay = n => n >= 10 ? Math.round(n).toLocaleString("en-GB") : n >= 1 ? n.toFixed(1) : n > 0 ? n.toFixed(2) : "0";
+function sellCells(st, p) {
   if (!st.r.item) return `<td class="num"><span class="muted">—</span></td><td class="num"><span class="muted">—</span></td>`;
   const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>net ${gold(st.cost - val)}${note || ""}</small></td>`;
   const ahBetter = st.ah > st.vendor;
-  return cell(st.vendor, !ahBetter && st.vendor > 0)
-    + cell(st.ah, ahBetter, st.onAh ? ` · ${st.onAh} on AH${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : " · not listed");
+  const made = st.r.qty * st.crafts, rate = p.stat(st.r.item).perDay;
+  const note = !p.salesInfo.ok ? " · no sales data yet"
+    : st.onAh ? ` · ${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
+    : rate > 0 ? ` · sells ~${perDay(rate)}/day, not above vendor` : " · none sold";
+  return cell(st.vendor, !ahBetter && st.vendor > 0) + cell(st.ah, ahBetter, note);
 }
 
 function render() {
@@ -238,19 +267,26 @@ function render() {
       <td class="num rng">${st.from}–${st.to}</td>
       <td><b>${st.crafts} × ${name}</b> ${tags}<div class="meta">${reag} · learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></div></td>
       <td class="num">${gold(st.cost)}</td>
-      ${sellCells(st)}
+      ${sellCells(st, p)}
       <td class="num"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan">✕</button></td>
     </tr>`;
   }).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
+  const si = p.salesInfo;
+  $("#salesnote").innerHTML = !SALES ? "Sales data could not be loaded, so everything is valued at vendor price."
+    : si.ok ? `Sales measured over the last <b>${Math.round(si.hours)} h</b> of snapshots${si.hours < 48 ? " — still a short window, so treat daily rates as rough" : ""}.`
+    : `Sales tracking started ${ago(SALES.factions?.[state.faction]?.since || SALES.updated)}; AH estimates switch on after ${MIN_HOURS} h of snapshots (now ${si.hours.toFixed(1)} h). Until then everything is valued at vendor price.`;
+  const n0 = x => x.toLocaleString("en-GB");
   $("#sell").innerHTML = p.sellList.length
     ? p.sellList.map(e => {
-        const vend = ITEMS[e.id]?.s || 0;
-        return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${e.n.toLocaleString("en-GB")}</td>
-          <td class="num">${gold(vend)}</td><td class="num">${gold(minPrice(BOOK0, e.id))}</td>
-          <td class="num">${gold(vend * e.n)}</td><td class="num better">${gold(e.unit * e.n)}</td>
-          <td class="num">${listed(BOOK0, e.id).toLocaleString("en-GB")}</td></tr>`;
+        const days = e.n && e.stat.perDay ? e.n / (e.stat.perDay * SHARE) : 0;
+        return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${n0(e.made)}</td>
+          <td class="num">${si.ok ? perDay(e.stat.perDay) : "—"}<small>${n0(listed(BOOK0, e.id))} listed</small></td>
+          <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n ? `<small>~${days < 1 ? "<1" : days.toFixed(1)} days</small>` : ""}</td>
+          <td class="num">${e.unit != null ? gold(e.unit) : "—"}${e.stat.avg != null ? `<small>sold avg ${gold(Math.round(e.stat.avg))}</small>` : ""}</td>
+          <td class="num">${gold(e.vend)}</td>
+          <td class="num">${gold(e.value)}</td></tr>`;
       }).join("")
-    : `<tr><td colspan="7" class="empty">Nothing in this route sells above vendor price right now.</td></tr>`;
+    : `<tr><td colspan="7" class="empty">This route makes nothing that can be sold.</td></tr>`;
 
   const shop = p.shopping.filter(e => e.ah || e.vendor).sort((a, b) => (b.ah + b.vendor) - (a.ah + a.vendor));
   $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td>
@@ -270,6 +306,7 @@ function bind() {
   $("#patterns").onchange = e => set("patterns", e.target.value);
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
   $("#sellmode").onchange = e => set("sell", e.target.value);
+  $("#wait").onchange = e => set("wait", Number(e.target.value));
   $("#mining").onchange = e => set("mining", e.target.checked);
   $("#neutral").onchange = e => set("neutral", e.target.checked);
   $("#stations").onchange = e => {
@@ -283,8 +320,9 @@ function bind() {
 
 async function load() {
   try {
-    [PRICES, REC] = await Promise.all([loadPrices(), loadJson("data/recipes.json")]);
+    [PRICES, REC, SALES] = await Promise.all([loadPrices(), loadJson("data/recipes.json"), loadJson("data/sales.json?t=" + Date.now()).catch(() => null)]);
     ITEMS = REC.items;
+    $("#wait").value = state.wait;
     $("#prof").innerHTML = REC.professions.filter(p => p.name !== "Mining").map(p => `<option ${p.name === state.prof ? "selected" : ""}>${p.name}</option>`).join("");
     if (!REC.professions.some(p => p.name === state.prof)) state.prof = REC.professions[0].name;
     $("#from").value = state.from; $("#to").value = state.to;
