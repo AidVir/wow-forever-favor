@@ -71,8 +71,9 @@ function patternCost(book, r) {
 // listings that disappeared before they could expire (data/sales.json), which gives units sold per
 // day. You can expect to sell at most your share of that demand while you keep relisting; the price
 // is the lower of the cheapest listing now and the average price things actually sold at, minus the
-// 5% cut. Without enough sales history an item counts at vendor price only.
-const AH_CUT = 0.95, SHARE = 0.5, MIN_HOURS = 6;
+// 5% cut. Until there are MIN_HOURS of sales history it falls back to the listing-based guess:
+// at most a quarter of the units currently listed, at the cheapest listing.
+const AH_CUT = 0.95, SHARE = 0.5, MIN_HOURS = 6, ABSORB = 0.25;
 let SALES = null;
 function salesInfo() {
   const fs = [state.faction, ...(state.neutral ? ["neutral"] : [])].map(f => SALES?.factions?.[f]).filter(Boolean);
@@ -95,7 +96,11 @@ function saleModel(book0) {
     const p = now != null && avg != null ? Math.min(now, avg) : now ?? avg;
     return p == null ? null : Math.floor(p * AH_CUT);
   };
-  const cap = id => info.ok ? Math.floor(stat(id).perDay * state.wait * SHARE) : 0;
+  const cap = id => {
+    if (info.ok) return Math.floor(stat(id).perDay * state.wait * SHARE);
+    const n = listed(book0, id);
+    return n ? Math.max(2, Math.floor(n * ABSORB)) : 0;
+  };
   // value of selling `units` more of item id; commit=true records the sale
   function value(id, units, commit) {
     const vend = ITEMS[id]?.s || 0;
@@ -229,7 +234,7 @@ function sellCells(st, p) {
   const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>net ${gold(st.cost - val)}${note || ""}</small></td>`;
   const ahBetter = st.ah > st.vendor;
   const made = st.r.qty * st.crafts, rate = p.stat(st.r.item).perDay;
-  const note = !p.salesInfo.ok ? " · no sales data yet"
+  const note = !p.salesInfo.ok ? (st.onAh ? ` · ${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : " · not listed")
     : st.onAh ? ` · ${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
     : rate > 0 ? ` · sells ~${perDay(rate)}/day, not above vendor` : " · none sold";
   return cell(st.vendor, !ahBetter && st.vendor > 0) + cell(st.ah, ahBetter, note);
@@ -274,14 +279,14 @@ function render() {
   const si = p.salesInfo;
   $("#salesnote").innerHTML = !SALES ? "Sales data could not be loaded, so everything is valued at vendor price."
     : si.ok ? `Sales measured over the last <b>${Math.round(si.hours)} h</b> of snapshots${si.hours < 48 ? " — still a short window, so treat daily rates as rough" : ""}.`
-    : `Sales tracking started ${ago(SALES.factions?.[state.faction]?.since || SALES.updated)}; AH estimates switch on after ${MIN_HOURS} h of snapshots (now ${si.hours.toFixed(1)} h). Until then everything is valued at vendor price.`;
+    : `<b>Not enough sales history yet</b> (${si.hours.toFixed(1)} of ${MIN_HOURS} h). Until then AH sales use the old guess: up to a quarter of what is listed now, at the cheapest listing. Measured sales per day take over automatically.`;
   const n0 = x => x.toLocaleString("en-GB");
   $("#sell").innerHTML = p.sellList.length
     ? p.sellList.map(e => {
         const days = e.n && e.stat.perDay ? e.n / (e.stat.perDay * SHARE) : 0;
         return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${n0(e.made)}</td>
-          <td class="num">${si.ok ? perDay(e.stat.perDay) : "—"}<small>${n0(listed(BOOK0, e.id))} listed</small></td>
-          <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n ? `<small>~${days < 1 ? "<1" : days.toFixed(1)} days</small>` : ""}</td>
+          <td class="num">${si.ok ? perDay(e.stat.perDay) : '<span class="muted">collecting</span>'}<small>${n0(listed(BOOK0, e.id))} listed</small></td>
+          <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n && si.ok ? `<small>~${days < 1 ? "<1" : days.toFixed(1)} days</small>` : ""}</td>
           <td class="num">${e.unit != null ? gold(e.unit) : "—"}${e.stat.avg != null ? `<small>sold avg ${gold(Math.round(e.stat.avg))}</small>` : ""}</td>
           <td class="num">${gold(e.vend)}</td>
           <td class="num">${gold(e.value)}</td></tr>`;
