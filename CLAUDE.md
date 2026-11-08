@@ -5,8 +5,8 @@ priced from the **EU PvP** auction houses:
 
 | Page | Files | What it answers |
 |---|---|---|
-| Merchant's Favor | `index.html`, `app.js` | Cheapest Waylaid Crate to fill for Merchant's Favor (gold per Favor), plus a goal planner |
-| Profession leveling | `leveling.html`, `leveling.js` | Cheapest 1–300 route per profession, with vendor vs AH resale of what you craft |
+| Merchant's Favor | `favor.html`, `app.js` | Cheapest Waylaid Crate to fill for Merchant's Favor (gold per Favor), plus a goal planner |
+| Profession leveling (home page) | `index.html`, `leveling.js` | Cheapest 1–300 route per profession, with vendor vs AH resale of what you craft |
 | Craftsman's Writs | `writs.html`, `writs.js` | All 150 writs ranked by gold per 100 trade-faction reputation |
 
 - Live site: https://aidvir.github.io/wow-forever-favor/ (GitHub Pages, served from `main`)
@@ -18,8 +18,8 @@ scripts are plain Node (`package.json` only sets `"type": "module"`).
 ## Layout
 
 ```
-index.html / app.js        Merchant's Favor page
-leveling.html / leveling.js
+index.html / leveling.js   Profession leveling (home page; leveling.html only redirects here)
+favor.html / app.js        Merchant's Favor page
 writs.html / writs.js
 common.js                  shared helpers: $, store (localStorage, "wff:" prefix), esc, gold(copper),
                            makeBook / buyCost / consume / listed / minPrice (order-book maths),
@@ -153,7 +153,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
     `.intro-meta` holding `#status` (short: "Prices updated …") and `.pill#market`.
   - Answer first: `.hero` (big number + `.hero-alt` list of `.alt` rows), then the settings panel.
   - Settings: `.panel.settings` with the 2–4 controls people change most in `.controls`; everything
-    else goes in `<details class="more">` ("More options" + a `<small>` listing what's inside).
+    else goes in `<details class="more" open>` ("More options", open by default, + a `<small>` listing what's inside).
   - Long explanations go in `<details class="explain">` (collapsed), not in fine print under tables.
   - `<footer class="site-foot"><div class="wrap foot">`: about, tools links, project links.
 - **Tables:**

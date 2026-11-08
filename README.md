@@ -4,8 +4,8 @@ Live site: https://aidvir.github.io/wow-forever-favor/
 
 Three tools priced from the EU **PvP** ruleset auction houses (Alliance, Horde, optional Blackwater):
 
-- **Merchant's Favor** (`index.html`): cheapest Waylaid Crate to fill per Favor.
-- **Profession leveling** (`leveling.html`): cheapest 1–300 route for Alchemy, Blacksmithing, Enchanting,
+- **Merchant's Favor** (`favor.html`): cheapest Waylaid Crate to fill per Favor.
+- **Profession leveling** (`index.html`, the home page): cheapest 1–300 route for Alchemy, Blacksmithing, Enchanting,
   Engineering, Leatherworking, Tailoring, Cooking and First Aid, with shopping list and an estimate of
   what the crafts sell for on the AH (shown next to the vendor-only cost).
 - **Craftsman's Writs** (`writs.html`): all 150 writs ranked by gold per 100 trade-faction reputation.
