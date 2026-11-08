@@ -227,11 +227,15 @@ function plan() {
   return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList, salesInfo: sales.info, stat: sales.stat };
 }
 
-// Vendor and AH value of a step's crafts, side by side, each with the step's net cost under it.
+// Profit / loss: positive (green, "+") when you make money, negative (red, "−") when you lose it.
+const pl = c => c == null || !isFinite(c) ? "—"
+  : `<span class="${Math.round(c) > 0 ? "pos" : Math.round(c) < 0 ? "neg" : ""}">${Math.round(c) > 0 ? "+" : ""}${gold(c)}</span>`;
+
+// Vendor and AH value of a step's crafts, side by side, each with the step's profit / loss under it.
 const perDay = n => n >= 10 ? Math.round(n).toLocaleString("en-GB") : n >= 1 ? n.toFixed(1) : n > 0 ? n.toFixed(2) : "0";
 function sellCells(st, p) {
   if (!st.r.item) return `<td class="num"><span class="muted">—</span></td><td class="num"><span class="muted">—</span></td>`;
-  const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>net ${gold(st.cost - val)}${note || ""}</small></td>`;
+  const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>${pl(val - st.cost)}${note || ""}</small></td>`;
   const ahBetter = st.ah > st.vendor;
   const made = st.r.qty * st.crafts, rate = p.stat(st.r.item).perDay;
   const note = !p.salesInfo.ok ? (st.onAh ? ` · ${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : " · not listed")
@@ -251,9 +255,9 @@ function render() {
   const t0 = performance.now();
   const p = plan();
   $("#summary").innerHTML = `
-    <div><span class="eyebrow">Materials${state.patterns !== "trainer" ? " + patterns" : ""}</span><b>${gold(p.total)}</b></div>
-    <div class="${state.sell === "vendor" ? "pick" : ""}"><span class="eyebrow">Net if you vendor everything</span><b>${gold(p.total - p.resaleVendor)}</b><small>vendor sales ${gold(p.resaleVendor)}</small></div>
-    <div class="${state.sell === "ah" ? "pick" : ""}"><span class="eyebrow">Net if you sell on the AH</span><b>${gold(p.total - p.resaleAh)}</b><small>AH + vendor sales ${gold(p.resaleAh)} (est.)</small></div>
+    <div><span class="eyebrow">Materials${state.patterns !== "trainer" ? " + patterns" : ""}</span><b>${pl(-p.total)}</b><small>what you spend</small></div>
+    <div class="${state.sell === "vendor" ? "pick" : ""}"><span class="eyebrow">Profit / loss if you vendor everything</span><b>${pl(p.resaleVendor - p.total)}</b><small>vendor sales ${gold(p.resaleVendor)}</small></div>
+    <div class="${state.sell === "ah" ? "pick" : ""}"><span class="eyebrow">Profit / loss if you sell on the AH</span><b>${pl(p.resaleAh - p.total)}</b><small>AH + vendor sales ${gold(p.resaleAh)} (est.)</small></div>
     <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
     <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : state.to}</b></div>`;
   $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>` : "";

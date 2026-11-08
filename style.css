@@ -330,3 +330,5 @@ table.shop, table.writs { min-width: 600px; }
   .controls .ctl { flex: 1 1 140px; }
   .controls select, .controls input[type=number] { width: 100%; }
 }
+.pos, .pos .g, .pos .s, .pos .c { color: var(--good); }
+.neg, .neg .g, .neg .s, .neg .c { color: var(--bad); }
