@@ -57,35 +57,41 @@ function render() {
     const avgFill = pool.length ? pool.reduce((a, x) => a + x.fill.cost, 0) / pool.length : null;
     const env = minPrice(book, id);
     const tot = env != null && avgFill != null ? env + avgFill : null;
-    return `<div class="env"><div class="eyebrow">Sealed ${rank}'s Writ</div>
-      <div class="env-val">${tot != null ? gold(tot / WRIT_REP[rank] * 100) : "—"} <span>per 100 rep</span></div>
-      <div class="meta">${env != null ? `Envelope ${gold(env)} on AH` : "No envelopes listed"} · average fill ${gold(avgFill)} · ${WRIT_REP[rank]} rep</div></div>`;
+    return `<div class="alt"><span>Sealed ${rank}'s Writ<small>${env != null ? `envelope ${gold(env)}` : "no envelopes listed"} · avg fill ${gold(avgFill)} · ${WRIT_REP[rank]} rep</small></span>
+      <b class="env-val">${tot != null ? gold(tot / WRIT_REP[rank] * 100) : "—"}</b></div>`;
   }).join("");
 
   const best = shown.find(x => x.per100 != null);
   $("#hero").innerHTML = best ? `<div class="hero-main"><div class="eyebrow">Cheapest reputation right now</div>
       <div class="hero-val">${gold(best.per100)} <span>per 100 rep</span></div>
       <div class="hero-what">${esc(ITEMS[best.w.id]?.n || "")} — ${best.fill.how === "craft" ? `craft it (${esc(best.fill.prof)})` : "buy"} ${best.w.qty > 1 ? best.w.qty + " × " : ""}${wh(best.w.item, ITEMS[best.w.item]?.n || best.w.item)} for ${gold(best.total)}, ${best.w.rep} rep</div></div>
-      <div class="hero-alt"><div class="eyebrow">Or buy sealed envelopes (random writ)</div>${envHtml}</div>` : "";
+      <div class="hero-alt"><div class="eyebrow">Or open sealed envelopes · per 100 rep</div>${envHtml}</div>` : "";
 
-  $("#rows").innerHTML = shown.map(x => {
+  const row = x => {
     const w = x.w, name = (ITEMS[w.id]?.n || "").replace(/^Craftsman's Writ: /, "");
     const how = !x.fill ? `<span class="muted">not available</span>`
       : x.fill.how === "craft" ? `<span class="craft">craft</span> ${x.fill.r.reagents.map(([id, q]) => `${q * Math.ceil(w.qty / x.fill.r.qty)} × ${esc(ITEMS[id]?.n || id)}`).join(", ")}`
       : x.fill.how === "vendor" ? "vendor" : `buy · ${listed(book, w.item)} listed`;
     return `<tr>
-      <td><b>${wh(w.id, name)}</b><div class="meta"><span class="tier t-${w.rank.toLowerCase()}">${w.rank}</span> ${w.prof} · skill ${w.skill}${w.side ? ` · <span class="side ${w.side.toLowerCase()}">${w.side} only</span>` : ""}</div></td>
-      <td class="num">${w.rep}</td>
-      <td>${w.qty > 1 ? w.qty + " × " : ""}${wh(w.item, ITEMS[w.item]?.n || w.item)}<div class="meta">${how}</div></td>
-      <td class="num">${gold(x.fill?.cost)}</td>
-      <td class="num">${state.own === "have" ? `<span class="muted">${gold(minPrice(book, w.id))}</span>` : gold(x.writCost)}</td>
+      <td class="c-name"><b>${wh(w.id, name)}</b><div class="meta"><span class="tier t-${w.rank.toLowerCase()}">${w.rank}</span> · ${w.prof} · skill ${w.skill}${w.side ? ` · <span class="side ${w.side.toLowerCase()}">${w.side} only</span>` : ""}</div></td>
+      <td class="num c-rep" data-label="Rep">${w.rep}</td>
+      <td class="c-fill">${w.qty > 1 ? w.qty + " × " : ""}${wh(w.item, ITEMS[w.item]?.n || w.item)}<div class="meta">${how}</div></td>
+      <td class="num c-cost" data-label="Item">${gold(x.fill?.cost)}</td>
+      <td class="num c-writ" data-label="Writ">${state.own === "have" ? `<span class="muted">${gold(minPrice(book, w.id))}</span>` : gold(x.writCost)}</td>
       <td class="num pf">${gold(x.per100)}</td>
     </tr>`;
-  }).join("") || `<tr><td colspan="6" class="empty">No writs for this filter.</td></tr>`;
+  };
+  // Writs that can't be priced right now (nothing listed to fill them) are folded away behind one row.
+  const priced = shown.filter(x => x.per100 != null), unpriced = shown.filter(x => x.per100 == null);
+  const fold = !unpriced.length ? ""
+    : `<tr class="more-row"><td colspan="6"><button class="linkbtn" id="toggleUnpriced" aria-expanded="${showUnpriced}">${showUnpriced ? "Hide" : "Show"} ${unpriced.length} writ${unpriced.length > 1 ? "s" : ""} that can't be priced right now</button></td></tr>`;
+  $("#rows").innerHTML = (priced.map(row).join("") + fold + (showUnpriced ? unpriced.map(row).join("") : ""))
+    || `<tr><td colspan="6" class="empty">No writs for this filter.</td></tr>`;
 }
+let showUnpriced = false;
 
 function chips(el, values, key) {
-  el.innerHTML = values.map(v => `<button class="chip${v === state[key] ? " on" : ""}" data-v="${v}">${v}</button>`).join("");
+  el.innerHTML = values.map(v => `<button class="chip${v === state[key] ? " on" : ""}" aria-pressed="${v === state[key]}" data-v="${v}">${v}</button>`).join("");
   el.onclick = e => { const v = e.target.dataset?.v; if (v) { state[key] = v; store.set("wr:" + key, v); chips(el, values, key); render(); } };
 }
 
@@ -99,7 +105,8 @@ function bind() {
     i.checked = state.profs.has(i.value);
     i.onchange = () => { i.checked ? state.profs.add(i.value) : state.profs.delete(i.value); store.set("wr:profs", [...state.profs]); render(); };
   });
-  chips($("#ranks"), ["All", "Journeyman", "Expert", "Artisan"], "rank");
+  $("#rows").onclick = e => { if (e.target.id === "toggleUnpriced") { showUnpriced = !showUnpriced; render(); $("#toggleUnpriced")?.focus(); } };
+  chips($("#ranks"),["All", "Journeyman", "Expert", "Artisan"], "rank");
   chips($("#profFilter"), ["All", ...PROFS], "prof");
 }
 
@@ -109,7 +116,7 @@ async function load() {
     ITEMS = REC.items;
     MAKERS = new Map();
     for (const p of REC.professions) for (const r of p.recipes) if (r.item) (MAKERS.get(r.item) || MAKERS.set(r.item, []).get(r.item)).push({ r, prof: p.name });
-    $("#status").innerHTML = `Prices from the ${PRICES.region} ${PRICES.ruleset.name} auction houses, updated <b>${ago(PRICES.updated)}</b>.`;
+    $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b>`;
     bind(); render();
   } catch (e) {
     console.error(e);

@@ -117,7 +117,7 @@ function render() {
 
   renderHero(all.filter(r => available(r.c) && r.perFavor != null).sort((a, b) => a.perFavor - b.perFavor));
   renderCats();
-  $("#rows").innerHTML = rows.map(rowHtml).join("") || `<tr><td colspan="7" class="empty">No crates for this filter.</td></tr>`;
+  $("#rows").innerHTML = rows.map(rowHtml).join("") || `<tr><td colspan="5" class="empty">No crates for this filter.</td></tr>`;
   renderPlan();
 }
 
@@ -138,17 +138,17 @@ function rowHtml(r) {
   const open = state.open.has(key);
   const crateTxt = state.crateMode === "own" ? `<span class="muted">owned</span>` : (r.crateCost == null ? `<span class="muted">none listed</span>` : gold(r.crateCost));
   const short = r.c.name.replace("Waylaid Crate: ", "");
-  let html = `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0">
-    <td><div class="crate"><span class="caret">▸</span><div><b>${short}</b><div class="meta">${tierBadge(r.c)} ${r.c.cat} · lvl ${r.c.level}</div></div></div></td>
-    <td class="num">${favorCell(r)}</td>
-    <td>${bundleLabel(r.best)}</td>
-    <td class="num">${gold(r.best?.cost)}</td>
-    <td class="num">${crateTxt}</td>
-    <td class="num"><b>${gold(r.total)}</b></td>
+  let html = `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
+    <td class="c-name"><div class="crate"><span class="caret" aria-hidden="true">▸</span><div><b>${short}</b><div class="meta">${tierBadge(r.c)} · ${r.c.cat} · lvl ${r.c.level}</div></div></div></td>
+    <td class="num c-fav" data-label="Favor">${favorCell(r)}</td>
+    <td class="c-fill">${bundleLabel(r.best)}</td>
+    <td class="num c-total" data-label="Total"><b>${gold(r.total)}</b></td>
     <td class="num pf">${gold(r.perFavor)}</td>
   </tr>`;
   if (open) {
-    html += `<tr class="detail"><td colspan="7"><div class="bundles">${r.bundles.map(bd => {
+    html += `<tr class="detail"><td colspan="5">
+    <p class="breakdown"><span>Fill <b>${gold(r.best?.cost)}</b></span><span>+ crate <b>${crateTxt}</b></span><span>= <b>${gold(r.total)}</b> for ${r.fav % 1 ? r.fav.toFixed(1) : r.fav} Favor</span>${r.crateId ? `<span><a href="https://www.wowhead.com/forever/item=${r.crateId}" target="_blank" rel="noopener">Crate item</a> · ${unitsListed(LIVE, r.crateId)} listed</span>` : ""}</p>
+    <div class="bundles">${r.bundles.map(bd => {
       const id = bd.id;
       const unit = listingsFor(LIVE, id)[0]?.[0];
       const craft = bd.acq?.how === "craft"
@@ -159,7 +159,6 @@ function rowHtml(r) {
         <div class="bd-meta">from ${gold(unit)} each · ${bd.listed.toLocaleString("en-GB")} listed${trend(id)}</div>${craft}
       </div>`;
     }).join("")}</div>
-    ${r.crateId ? `<p class="fine">Crate item: <a href="https://www.wowhead.com/forever/item=${r.crateId}" target="_blank" rel="noopener">${r.c.name}</a> · ${unitsListed(LIVE, r.crateId)} listed</p>` : ""}
     </td></tr>`;
   }
   return html;
@@ -190,14 +189,14 @@ function renderHero(sorted) {
         — ${gold(b.total)} for ${b.c.favor} Favor${state.crateMode === "buy" ? ", crate included" : ""}</div>
     </div>
     <div class="hero-alt">
-      <div class="eyebrow">Runners-up</div>
-      ${rest.slice(0, 3).map(r => `<div class="alt"><span>${r.c.name.replace("Waylaid Crate: ", "")} · ${r.best.qty} × ${r.best.name}</span><b>${gold(r.perFavor)}</b></div>`).join("")}
+      <div class="eyebrow">Next cheapest</div>
+      ${rest.slice(0, 3).map(r => `<div class="alt"><span>${r.c.name.replace("Waylaid Crate: ", "")}<small>${r.best.qty} × ${r.best.name}</small></span><b>${gold(r.perFavor)}</b></div>`).join("")}
     </div>`;
 }
 
 function renderCats() {
   const cats = ["All", ...new Set(CRATES.map(c => c.cat))];
-  $("#cats").innerHTML = cats.map(c => `<button class="chip${c === state.cat ? " on" : ""}" data-cat="${c}">${c}</button>`).join("");
+  $("#cats").innerHTML = cats.map(c => `<button class="chip${c === state.cat ? " on" : ""}" aria-pressed="${c === state.cat}" data-cat="${c}">${c}</button>`).join("");
 }
 
 // Greedy plan: repeatedly take the cheapest marginal crate given what has already been bought.
@@ -224,11 +223,11 @@ function renderPlan() {
     <div><span class="eyebrow">Crates</span><b>${lines.reduce((a, p) => a + p.n, 0)}</b></div>
     <div><span class="eyebrow">Avg per Favor</span><b>${gold(cost / favor)}</b></div></div>
     ${short ? `<p class="warn">The auction house runs out after about ${Math.floor(favor)} Favor at these prices.</p>` : ""}
-    <table class="plan"><thead><tr><th>Buy</th><th>Fill with</th><th class="num">Favor</th><th class="num">Cost</th></tr></thead><tbody>
+    <div class="table-scroll"><table class="plan"><thead><tr><th>Buy</th><th>Fill with</th><th class="num">Favor</th><th class="num">Cost</th></tr></thead><tbody>
     ${lines.map(p => `<tr><td>${p.n} × ${p.r.c.name.replace("Waylaid Crate: ", "")}</td>
       <td>${p.r.best.qty} × ${p.r.best.name} each${p.r.best.acq.how === "craft" ? ` <span class="craft">craft</span>` : ""}</td>
       <td class="num">${Math.round(p.favor)}</td><td class="num">${gold(p.cost)}</td></tr>`).join("")}
-    </tbody></table>
+    </tbody></table></div>
     <p class="fine">Buys each crate from the cheapest listings still left after the previous ones, so it accounts for prices rising as you buy out the cheap stock.</p>`;
 }
 
@@ -271,7 +270,7 @@ async function load() {
     if (!r.ok) throw new Error(r.status);
     DATA = await r.json();
     const f = Object.values(DATA.factions);
-    $("#status").innerHTML = `Prices from the ${DATA.region} ${DATA.ruleset.name} auction houses, updated <b>${ago(DATA.updated)}</b>. Checked every 10 min; Blizzard publishes a new snapshot about hourly.`;
+    $("#status").innerHTML = `Prices updated <b>${ago(DATA.updated)}</b>`;
     $("#updated").textContent = `Scanned ${new Date(DATA.updated).toLocaleString("en-GB")} · ${f.map(x => x.totalAuctions.toLocaleString("en-GB")).join(" / ")} auctions`;
     render();
   } catch (e) {

@@ -140,9 +140,30 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - Load all three pages and check that the browser console shows no errors.
   - Check both phone width and dark/light mode.
 - **Styling rules:**
-  - Keep everything in `style.css` and reuse the tokens (`--surface`, `--accent`, `--good`, `--bad`, …).
+  - Keep everything in `style.css` and reuse the tokens (`--surface`, `--accent`, `--good`, `--bad`, …),
+    plus the spacing / type scale (`--sp-1`…`--sp-7`, `--fs-xs`…`--fs-3xl`) and `--header-h`.
   - Fonts are Inter (UI) and Cinzel (headings only; numbers stay in Inter).
   - Class names are shared across pages and generated in JS, so search the JS before renaming a class.
+    Add new names instead of renaming old ones.
+- **Page structure** (same on every page, copy it for a new page):
+  - `<a class="skip">`, then `<header class="top"><div class="wrap bar">`: brand (`.brand`, links home),
+    `<nav class="tabs">` with one `<a>` per tool (`aria-current="page"` on the current one, short labels),
+    faction `.seg`. The header is sticky on desktop and static on phones.
+  - `<main id="main">` starts with `<section class="intro">`: `.eyebrow`, `<h1>`, `.lead`, then
+    `.intro-meta` holding `#status` (short: "Prices updated …") and `.pill#market`.
+  - Answer first: `.hero` (big number + `.hero-alt` list of `.alt` rows), then the settings panel.
+  - Settings: `.panel.settings` with the 2–4 controls people change most in `.controls`; everything
+    else goes in `<details class="more">` ("More options" + a `<small>` listing what's inside).
+  - Long explanations go in `<details class="explain">` (collapsed), not in fine print under tables.
+  - `<footer class="site-foot"><div class="wrap foot">`: about, tools links, project links.
+- **Tables:**
+  - Wrap in `.table-scroll`; add `.sticky` for long tables (sticky `<th>` under the header, desktop only).
+  - Keep secondary numbers out of the row: put them in an expandable `tr.detail` (rows are
+    `tr.row` with `tabindex="0"`, `aria-expanded`, toggled by click / Enter / Space).
+  - `table.cards` turns rows into cards below 760 px. Each table defines its own grid areas in the
+    phone media query (`table.rank`, `table.writs`, `table.steps`), cells use `c-*` classes and
+    `data-label` for the small label shown on phones. Other tables just scroll inside `.table-scroll`.
+  - Tiers are a coloured dot + word (`.tier.t-…`), not filled badges.
 
 ## Known limits
 
@@ -153,3 +174,20 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - Cancelled listings are counted as sales.
   - Deposits and undercutting aren't modelled.
 - Artisan crate Favor values are estimates.
+
+## Money making (money.html / money.js / money.css)
+
+Ranks every craft the user can make (ticked professions at their skill; none ticked = all at 300) by
+sustainable profit per day. The constants at the top of `money.js` are the rules, and the page repeats
+them under "How this is calculated", so change both together. `money.css` holds page-only rules on top
+of the `style.css` tokens. `acquire()` and `salesStats()` at the end of `common.js` are its cost and
+demand models (`leveling.js` still has its own copies and could switch to them).
+- **Sell price:** min(cheapest listing, average sold) on the faction AH × 0.95, minus a lost deposit of
+  15% of vendor sell price (×2 when oversupplied); the vendor price if higher. Blackwater only for buying.
+- **Reagent cost:** walks the order book for a whole day's crafts; crafts intermediates when cheaper;
+  "I gather my own" values reagents at AH sell value (or 0). Crafts/day are capped by AH reagent supply.
+- **Demand:** sales/day × share; share shrinks above 2 days of supply, flagged oversupplied above 3.
+  Before 6 h of history: a quarter of listed units per day, marked `guess`.
+- **Flags:** `risk` (few sales, one listing, price spike >1.5×) hides the row unless "Show unreliable
+  markets"; `warn` / `info` only label it. Enchantments, never-traded items (no binding data, maybe BoP)
+  and cooldown crafts are not ranked. Data reloads every 10 minutes while the tab is open.

@@ -1,0 +1,53 @@
+/* Money-making page only. Shared components (panels, controls, tables, tags) come from style.css;
+   this file only adds what the page needs on top, using the same tokens. */
+
+/* profession picker: a checkbox + skill input per profession */
+fieldset.mm-profs { border: 0; padding: 0; margin: 0; }
+.settings .mm-profs { margin-bottom: 16px; }
+fieldset.mm-profs legend { padding: 0; margin-bottom: 6px; }
+.mm-prof-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 6px; }
+.mm-prof {
+  display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; font-size: 13.5px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.mm-prof:hover { border-color: var(--line-strong); }
+.mm-prof.on { border-color: var(--accent); background: var(--accent-soft); }
+.mm-prof span { flex: 1; min-width: 0; }
+.mm-prof input[type=number] { width: 72px; height: 32px; padding: 4px 8px; font-size: 13.5px; }
+.mm-prof input[type=number]:disabled { opacity: .45; }
+#profhint { margin-top: 8px; }
+
+/* results */
+table.mm td:first-child { min-width: 220px; }
+.mm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.mm-daily { font-weight: 700; font-size: 15px; }
+tr.mm-loss > td { opacity: .7; }
+.mm-trend { font-size: 10.5px; font-weight: 700; margin-left: 5px; white-space: nowrap; }
+.mm-trend.up { color: var(--good); }
+.mm-trend.down { color: var(--bad); }
+
+.mm-flag {
+  display: inline-block; font-size: 10.5px; font-weight: 700; border-radius: 5px; padding: 0 6px; white-space: nowrap;
+  border: 1px solid var(--line); color: var(--muted); background: var(--surface-2);
+}
+.mm-flag.warn { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+.mm-flag.risk { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: var(--bad-soft); }
+
+/* expanded row */
+.mm-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.mm-detail > div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 14px; }
+.mm-detail h3 { font-size: 11.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+.mm-kv { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.mm-kv li { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; }
+.mm-kv li b { white-space: nowrap; font-weight: 600; }
+.mm-kv li.tot { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; }
+.mm-kv li.tot b { font-weight: 800; }
+.mm-kv li.muted { font-size: 12px; }
+.mm-flaglist { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+#salesnote .hint { margin: 0 0 12px; }
+.controls .mm-own { flex: 1 1 100%; }
+
+@media (max-width: 760px) {
+  table.mm td:first-child { min-width: 180px; }
+  .controls .mm-prof input[type=number] { width: 64px; flex: none; }
+}

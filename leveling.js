@@ -233,16 +233,16 @@ const pl = c => c == null || !isFinite(c) ? "—"
 
 // Vendor and AH value of a step's crafts, side by side, each with the step's profit / loss under it.
 const perDay = n => n >= 10 ? Math.round(n).toLocaleString("en-GB") : n >= 1 ? n.toFixed(1) : n > 0 ? n.toFixed(2) : "0";
-function sellCells(st, p) {
-  if (!st.r.item) return `<td class="num"><span class="muted">—</span></td><td class="num"><span class="muted">—</span></td>`;
-  const cell = (val, better, note) => `<td class="num${better ? " better" : ""}">${gold(val)}<small>${pl(val - st.cost)}${note || ""}</small></td>`;
+function sellInfo(st, p) {
+  if (!st.r.item) return null;
   const ahBetter = st.ah > st.vendor;
   const made = st.r.qty * st.crafts, rate = p.stat(st.r.item).perDay;
-  const note = !p.salesInfo.ok ? (st.onAh ? ` · ${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : " · not listed")
-    : st.onAh ? ` · ${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
-    : rate > 0 ? ` · sells ~${perDay(rate)}/day, not above vendor` : " · none sold";
-  return cell(st.vendor, !ahBetter && st.vendor > 0) + cell(st.ah, ahBetter, note);
+  const note = !p.salesInfo.ok ? (st.onAh ? `${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : "not listed")
+    : st.onAh ? `${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
+    : rate > 0 ? `sells ~${perDay(rate)}/day, not above vendor` : "none sold";
+  return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note };
 }
+const OPEN_STEPS = new Set(); // expanded step rows (not saved)
 
 function render() {
   if (!PRICES || !REC) return;
@@ -254,32 +254,58 @@ function render() {
 
   const t0 = performance.now();
   const p = plan();
+  // The answer for the chosen selling mode is the big number; the other totals sit beside it.
+  const sums = {
+    none: { big: `Materials${state.patterns !== "trainer" ? " + patterns" : ""} cost`, small: "Materials", val: pl(-p.total), sub: "what you spend" },
+    vendor: { big: "Profit / loss if you vendor everything", small: "If you vendor", val: pl(p.resaleVendor - p.total), sub: `vendor sales ${gold(p.resaleVendor)}` },
+    ah: { big: "Profit / loss if you sell on the AH", small: "If you sell on AH", val: pl(p.resaleAh - p.total), sub: `AH + vendor sales ${gold(p.resaleAh)} (est.)` },
+  };
+  const main = sums[state.sell] || sums.none;
+  const rest = ["none", "vendor", "ah"].filter(k => sums[k] !== main).map(k => sums[k]);
   $("#summary").innerHTML = `
-    <div><span class="eyebrow">Materials${state.patterns !== "trainer" ? " + patterns" : ""}</span><b>${pl(-p.total)}</b><small>what you spend</small></div>
-    <div class="${state.sell === "vendor" ? "pick" : ""}"><span class="eyebrow">Profit / loss if you vendor everything</span><b>${pl(p.resaleVendor - p.total)}</b><small>vendor sales ${gold(p.resaleVendor)}</small></div>
-    <div class="${state.sell === "ah" ? "pick" : ""}"><span class="eyebrow">Profit / loss if you sell on the AH</span><b>${pl(p.resaleAh - p.total)}</b><small>AH + vendor sales ${gold(p.resaleAh)} (est.)</small></div>
-    <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
-    <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : state.to}</b></div>`;
+    <div class="pick sum-main"><span class="eyebrow">${main.big}</span><b>${main.val}</b><small>${main.sub}</small></div>
+    <div class="sum-stats">
+      ${rest.map(x => `<div><span class="eyebrow">${x.small}</span><b>${x.val}</b><small>${x.sub}</small></div>`).join("")}
+      <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
+      <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : state.to}</b></div>
+    </div>`;
   $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>` : "";
 
+  // Steps: the row shows what to craft, its reagents, cost and what you get back in the chosen mode.
+  // Skill colours, the other selling mode, sales notes and recipe tags live in the expandable detail row.
+  const retVendor = state.sell === "vendor";
+  $("#retHead").textContent = retVendor ? "Vendor value" : "AH value (est.)";
   $("#steps").innerHTML = p.steps.map(st => {
-    const r = st.r;
+    const r = st.r, key = `${r.id}@${st.from}`, open = OPEN_STEPS.has(key);
     const reag = r.reagents.map(([id, q]) => `${q} × ${wh(id, ITEMS[id]?.n || id)}`).join(", ");
-    const tags = [
-      r.source === "item" ? `<span class="tag pat" title="Learned from a pattern / recipe item">${st.pattern?.unknown ? "pattern: vendor/Favor/drop" : "pattern " + gold(st.pattern?.cost)}</span>` : "",
-      r.needs ? `<span class="tag">${esc(r.needs)}</span>` : "",
-      r.isNew ? `<span class="tag new">new in Forever</span>` : "",
-      r.est ? `<span class="tag">trainer skill est.</span>` : "",
-    ].join(" ");
+    const pattern = r.source === "item" ? (st.pattern?.unknown ? "pattern: vendor/Favor/drop" : "pattern " + gold(st.pattern?.cost)) : "";
     const name = r.item ? wh(r.item, r.name) : esc(r.name);
-    return `<tr>
+    const s = sellInfo(st, p);
+    const ret = !s ? `<td class="num c-ret"><span class="muted">—</span></td>`
+      : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
+    let html = `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
-      <td><b>${st.crafts} × ${name}</b> ${tags}<div class="meta">${reag} · learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></div></td>
-      <td class="num">${gold(st.cost)}</td>
-      ${sellCells(st, p)}
-      <td class="num"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan">✕</button></td>
+      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="Learned from a pattern / recipe item">pattern</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}</div></td>
+      <td class="num c-cost" data-label="Cost">${gold(st.cost)}</td>
+      ${ret}
+      <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
+    if (open) {
+      const tags = [
+        pattern ? `<span class="tag pat">${pattern}</span>` : "",
+        r.needs ? `<span class="tag">${esc(r.needs)}</span>` : "",
+        r.isNew ? `<span class="tag new">new in Forever</span>` : "",
+        r.est ? `<span class="tag">trainer skill est.</span>` : "",
+      ].filter(Boolean).join(" ");
+      html += `<tr class="detail"><td colspan="5"><div class="facts">
+        <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
+        ${s ? `<div class="${s.vendorBetter ? "better" : ""}"><span class="k">Vendor everything</span><span>${gold(st.vendor)}</span><small>${pl(st.vendor - st.cost)}</small></div>
+        <div class="${s.ahBetter ? "better" : ""}"><span class="k">Sell on the AH (est.)</span><span>${gold(st.ah)}</span><small>${pl(st.ah - st.cost)} · ${s.note}</small></div>` : ""}
+        ${tags ? `<div><span class="k">Recipe</span><span>${tags}</span></div>` : ""}
+      </div></td></tr>`;
+    }
+    return html;
+  }).join("") || `<tr><td colspan="5" class="empty">Nothing to plan.</td></tr>`;
   const si = p.salesInfo;
   $("#salesnote").innerHTML = !SALES ? "Sales data could not be loaded, so everything is valued at vendor price."
     : si.ok ? `Sales measured over the last <b>${Math.round(si.hours)} h</b> of snapshots${si.hours < 48 ? " — still a short window, so treat daily rates as rough" : ""}.`
@@ -323,7 +349,14 @@ function bind() {
     e.target.checked ? state.stationsOff.delete(n) : state.stationsOff.add(n);
     store.set("lv:stationsOff", [...state.stationsOff]); render();
   };
-  $("#steps").onclick = e => { const id = Number(e.target.dataset?.ex); if (id) { state.excluded.add(id); store.set("lv:excluded", [...state.excluded]); render(); } };
+  const toggle = tr => { const k = tr.dataset.key; OPEN_STEPS.has(k) ? OPEN_STEPS.delete(k) : OPEN_STEPS.add(k); render(); $(`#steps tr.row[data-key="${k}"]`)?.focus(); };
+  $("#steps").onclick = e => {
+    const id = Number(e.target.dataset?.ex);
+    if (id) { state.excluded.add(id); store.set("lv:excluded", [...state.excluded]); render(); return; }
+    const tr = e.target.closest("tr.row");
+    if (tr && !e.target.closest("a, button")) toggle(tr);
+  };
+  $("#steps").onkeydown = e => { const tr = e.target.closest("tr.row"); if (tr && e.target === tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); } };
   $("#excl").onclick = e => { const id = Number(e.target.dataset?.unex); if (id) { state.excluded.delete(id); store.set("lv:excluded", [...state.excluded]); render(); } };
 }
 
@@ -336,7 +369,7 @@ async function load() {
     if (!REC.professions.some(p => p.name === state.prof)) state.prof = REC.professions[0].name;
     $("#from").value = state.from; $("#to").value = state.to;
     $("#patterns").value = state.patterns; $("#time").value = state.time; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
-    $("#status").innerHTML = `Prices from the ${PRICES.region} ${PRICES.ruleset.name} auction houses, updated <b>${ago(PRICES.updated)}</b>. Recipes from WoW Forever client build ${REC.build}.`;
+    $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b> · recipes from client build ${esc(REC.build)}`;
     bind(); render();
   } catch (e) {
     console.error(e);

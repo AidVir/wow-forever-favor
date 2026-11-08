@@ -75,3 +75,51 @@ function paintFaction(state) {
   document.body.dataset.faction = state.faction;
 }
 export const wh = (id, text) => `<a href="https://www.wowhead.com/forever/item=${id}" target="_blank" rel="noopener">${esc(text)}</a>`;
+
+// --- cost / sales models used by money.js (leveling.js still has its own copies; it can switch to these) ---
+// Cheapest way to get `qty` of an item right now: vendor (unlimited), AH (walks the order book for
+// the whole quantity, it does not consume it), or crafting it from a recipe ctx.can(r) allows, up to
+// 2 levels deep. ctx = { book, makers: Map(itemId -> recipes), items: recipes.json items,
+// can(recipe) -> bool, own?(itemId) -> unit cost or null (reagents you gather yourself) }.
+// Returns { cost, plan: [[kind, id, qty]] } with kind "ah" | "vendor" | "craft" (id = recipe id) | "own",
+// or null when the item can't be had.
+export function acquire(ctx, id, qty, depth = 0) {
+  const own = ctx.own?.(id);
+  if (own != null) return { cost: own * qty, plan: [["own", id, qty]] };
+  const it = ctx.items[id];
+  let best = null;
+  const ah = buyCost(ctx.book, id, qty);
+  if (ah != null) best = { cost: ah, plan: [["ah", id, qty]] };
+  if (it?.v != null && (!best || it.v * qty < best.cost)) best = { cost: it.v * qty, plan: [["vendor", id, qty]] };
+  if (depth < 2) {
+    for (const r of ctx.makers.get(id) || []) {
+      if (!ctx.can(r)) continue;
+      const crafts = Math.ceil(qty / r.qty);
+      let cost = 0, plan = [["craft", r.id, crafts]];
+      for (const [rid, rq] of r.reagents) {
+        const a = acquire(ctx, rid, rq * crafts, depth + 1);
+        if (!a) { cost = null; break; }
+        cost += a.cost; plan = plan.concat(a.plan);
+      }
+      if (cost != null && (!best || cost < best.cost)) best = { cost, plan };
+    }
+  }
+  return best;
+}
+
+// Units sold per item, measured by the price bot (data/sales.json) for the given houses.
+// hours = snapshot time covered by every house (the smallest); ok = enough history to trust a rate.
+// stat(id) -> { units, value, perDay, avg } where avg is the average price a unit sold at.
+export function salesStats(SALES, factions, minHours = 6) {
+  const fs = factions.map(f => SALES?.factions?.[f]).filter(Boolean);
+  const hours = fs.length ? Math.min(...fs.map(f => f.hours || 0)) : 0;
+  const cache = new Map();
+  const stat = id => {
+    if (cache.has(id)) return cache.get(id);
+    let units = 0, value = 0;
+    for (const f of fs) for (const [, n, v] of f.items[id] || []) { units += n; value += v; }
+    const s = { units, value, perDay: hours ? units / hours * 24 : 0, avg: units ? value / units : null };
+    cache.set(id, s); return s;
+  };
+  return { fs, hours, ok: hours >= minHours, stat };
+}

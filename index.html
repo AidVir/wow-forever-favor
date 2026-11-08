@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Favor Optimizer · WoW Forever</title>
+<title>Merchant's Favor · WoW Forever Market Tools</title>
 <meta name="description" content="Cheapest way to earn Merchant's Favor with Waylaid Crates in WoW Forever, priced from the EU PvP auction house every hour.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='9' width='24' height='18' rx='2' fill='%23b8862f'/%3E%3Cpath d='M4 14h24M16 9v18' stroke='%23412c0c' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,80 +11,100 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="landing">
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
-  <div class="wrap">
-    <div class="brand">
+  <div class="wrap bar">
+    <a class="brand" href="./">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="9" width="24" height="18" rx="2"/><path d="M4 14h24M16 9v18"/></svg>
-      <div>
-        <h1>Merchant's Favor Optimizer</h1>
-        <p class="sub">WoW Forever · Waylaid Crates · <span id="market">EU · PvP</span></p>
-      </div>
-    </div>
+      <span class="brand-name"><small>WoW Forever</small><b>Market Tools</b></span>
+    </a>
+    <nav class="tabs" aria-label="Tools"><a href="./" aria-current="page">Merchant's Favor</a><a href="leveling.html">Leveling</a><a href="writs.html">Writs</a><a href="money.html">Money making</a></nav>
     <div class="seg" role="radiogroup" aria-label="Faction">
       <button data-faction="alliance" role="radio">Alliance</button>
       <button data-faction="horde" role="radio">Horde</button>
     </div>
   </div>
-  <nav class="wrap tabs"><a href="./" aria-current="page">Merchant's Favor</a><a href="leveling.html">Profession leveling</a><a href="writs.html">Craftsman's Writs</a></nav>
 </header>
 
-<main class="wrap">
-  <section class="status" id="status">Loading auction house prices…</section>
+<main class="wrap" id="main">
+  <section class="intro">
+    <span class="eyebrow">Waylaid Crates</span>
+    <h1>Cheapest Merchant's Favor</h1>
+    <p class="lead">Every Waylaid Crate priced from the live auction house, so you know which crate to fill and what it costs.</p>
+    <div class="intro-meta">
+      <p class="status" id="status">Loading auction house prices…</p>
+      <span class="pill" id="market">EU · PvP</span>
+    </div>
+  </section>
 
-  <section class="hero" id="hero" hidden></section>
+  <section class="hero" id="hero" hidden aria-live="polite"></section>
 
-  <section class="panel controls">
-    <div class="ctl">
-      <label for="level">Character level</label>
-      <input id="level" type="number" min="10" max="60" value="60">
+  <section class="panel settings" aria-label="Your situation">
+    <div class="controls">
+      <div class="ctl">
+        <label for="level">Character level</label>
+        <input id="level" type="number" min="10" max="60" value="60">
+      </div>
+      <div class="ctl">
+        <label for="crateMode">Empty crates</label>
+        <select id="crateMode">
+          <option value="buy">Buy from AH</option>
+          <option value="own">I already have them</option>
+        </select>
+      </div>
+      <fieldset class="ctl profs">
+        <legend>I can craft with</legend>
+        <label><input type="checkbox" value="Mining"> Mining</label>
+        <label><input type="checkbox" value="Engineering"> Engineering</label>
+        <label><input type="checkbox" value="Tailoring"> Tailoring</label>
+        <label><input type="checkbox" value="Leatherworking"> Leatherworking</label>
+      </fieldset>
     </div>
-    <div class="ctl">
-      <label for="bonus">Performance Bonus rank</label>
-      <select id="bonus">
-        <option value="0">None</option><option value="1">Rank 1 (5%)</option>
-        <option value="2">Rank 2 (10%)</option><option value="3">Rank 3 (15%)</option>
-      </select>
-    </div>
-    <div class="ctl">
-      <label for="crateMode">Empty crates</label>
-      <select id="crateMode">
-        <option value="buy">Buy from AH</option>
-        <option value="own">I already have them</option>
-      </select>
-    </div>
-    <div class="ctl">
-      <span class="lbl">Also buy from</span>
-      <label class="chk"><input id="neutral" type="checkbox"> Blackwater AH (neutral, Booty Bay etc.)</label>
-    </div>
-    <fieldset class="ctl profs">
-      <legend>I can craft with</legend>
-      <label><input type="checkbox" value="Mining"> Mining</label>
-      <label><input type="checkbox" value="Engineering"> Engineering</label>
-      <label><input type="checkbox" value="Tailoring"> Tailoring</label>
-      <label><input type="checkbox" value="Leatherworking"> Leatherworking</label>
-    </fieldset>
+    <details class="more">
+      <summary>More options <small>Performance Bonus · neutral AH</small></summary>
+      <div class="controls">
+        <div class="ctl">
+          <label for="bonus">Performance Bonus rank</label>
+          <select id="bonus">
+            <option value="0">None</option><option value="1">Rank 1 (5%)</option>
+            <option value="2">Rank 2 (10%)</option><option value="3">Rank 3 (15%)</option>
+          </select>
+        </div>
+        <div class="ctl">
+          <span class="lbl">Also buy from</span>
+          <label class="chk"><input id="neutral" type="checkbox"> Blackwater AH (neutral, Booty Bay etc.)</label>
+        </div>
+      </div>
+    </details>
   </section>
 
   <section class="panel">
     <div class="panel-head">
-      <h2>Every crate, cheapest Favor first</h2>
-      <div class="filters" id="cats"></div>
+      <div>
+        <h2>All crates, cheapest Favor first</h2>
+        <p>Tap a crate to compare every bundle it accepts.</p>
+      </div>
+      <div class="filters" id="cats" aria-label="Category"></div>
     </div>
-    <div class="table-scroll">
-      <table class="rank">
+    <div class="table-scroll sticky">
+      <table class="rank cards">
         <thead><tr>
           <th>Crate</th><th class="num">Favor</th><th>Cheapest fill</th>
-          <th class="num">Fill</th><th class="num">Crate</th><th class="num">Total</th><th class="num">Per Favor</th>
+          <th class="num">Total</th><th class="num">Per Favor</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
-    <p class="hint">Click a row to see every accepted bundle. Prices are what it costs to buy the exact quantity from the cheapest listings right now.</p>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>Plan a goal</h2></div>
+    <div class="panel-head">
+      <div>
+        <h2>Plan a goal</h2>
+        <p>How much gold a Favor target costs, buying up the cheapest crates first.</p>
+      </div>
+    </div>
     <div class="goal">
       <div class="ctl">
         <label for="goal">Merchant's Favor needed</label>
@@ -95,8 +115,8 @@
     <div id="plan"></div>
   </section>
 
-  <section class="panel notes">
-    <h2>How Waylaid Crates work</h2>
+  <details class="explain notes">
+    <summary>How Waylaid Crates work</summary>
     <ol>
       <li><b>Get a crate.</b> Waylaid Crates drop from mobs anywhere from level 10, or you can buy them on the auction house (empty crates are not bound).</li>
       <li><b>Fill it.</b> Right-click to read the label, then right-click again and pick <em>one</em> of the accepted bundles from your bags. It becomes a soulbound Sealed Crate.</li>
@@ -104,13 +124,36 @@
       <li><b>Favor paid.</b> Gathering crates (herbs, ore, textiles, curiosities) pay 5 / 10 / 15 for Apprentice / Journeyman / Expert. Crafted crates (fabrics, ingots, parts) pay double: 10 / 20 / 30. Your first crate also completes <em>Shipping Label</em> (+50 Favor, 2,000 rep, once per character).</li>
       <li><b>Performance Bonus</b> (Legacy, professions) gives a 5 / 10 / 15% chance to double the Favor from a turn-in; the table uses the expected value.</li>
     </ol>
-    <p class="fine">Artisan (level 35) Favor values are not published yet; they are estimated at 20 (gathering) and 40 (crafted) and marked with <span class="est">est.</span> Crate and bundle data comes from community guides of the beta and launch week (Zockify, Forever Mastery, WoW Forever Builds). Prices come from the official Blizzard Game Data API, refreshed hourly. Not affiliated with Blizzard Entertainment.</p>
+    <h3>About the prices</h3>
+    <p>Prices are what it costs to buy the exact quantity from the cheapest listings right now, from the official Blizzard Game Data API. The site checks every 10 minutes; Blizzard publishes a new snapshot about once an hour. Artisan (level 35) Favor values are not published yet; they are estimated at 20 (gathering) and 40 (crafted) and marked with <span class="est">est.</span> Crate and bundle data comes from community guides of the beta and launch week (Zockify, Forever Mastery, WoW Forever Builds).</p>
+  </details>
+
+  <section aria-labelledby="more-tools">
+    <h2 class="sec" id="more-tools">More tools</h2>
+    <div class="tools">
+      <a class="tool" href="leveling.html"><b>Profession leveling</b><span>The cheapest 1–300 route for any profession, with a shopping list and what your crafts sell for.</span><em>Plan a route →</em></a>
+      <a class="tool" href="writs.html"><b>Craftsman's Writs</b><span>All 150 writs ranked by gold per 100 trade-faction reputation, plus sealed envelopes.</span><em>Find cheap rep →</em></a>
+      <a class="tool" href="money.html"><b>Money making</b><span>Ways to turn gold, mats and crafts into profit at today's auction house prices.</span><em>Make gold →</em></a>
+    </div>
   </section>
 </main>
 
-<footer class="wrap foot">
-  <span id="updated"></span>
-  <a href="https://github.com/AidVir/wow-forever-favor">Source on GitHub</a>
+<footer class="site-foot">
+  <div class="wrap foot">
+    <div>
+      <b>WoW Forever Market Tools</b>
+      <p>Live EU PvP auction house prices, turned into answers. Not affiliated with Blizzard Entertainment.</p>
+      <p id="updated"></p>
+    </div>
+    <nav aria-label="Tools (footer)">
+      <h2>Tools</h2>
+      <ul><li><a href="./">Merchant's Favor</a></li><li><a href="leveling.html">Profession leveling</a></li><li><a href="writs.html">Craftsman's Writs</a></li><li><a href="money.html">Money making</a></li></ul>
+    </nav>
+    <div>
+      <h2>Project</h2>
+      <ul><li><a href="https://github.com/AidVir/wow-forever-favor">Source on GitHub</a></li><li><a href="https://www.wowhead.com/forever">Wowhead Forever</a></li></ul>
+    </div>
+  </div>
 </footer>
 
 <script type="module" src="app.js"></script>

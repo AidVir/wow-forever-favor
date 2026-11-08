@@ -51,3 +51,10 @@ Fetch prices locally: `BLIZZARD_CLIENT_ID=... BLIZZARD_CLIENT_SECRET=... node sc
 (`PROBE=1` prints the auction house index).
 
 Not affiliated with Blizzard Entertainment.
+
+## Money making
+
+`money.html` ranks profitable crafts for your professions and skill by sustainable gold per day: profit
+per craft (realistic sell price after the AH cut and deposit, minus reagents priced at a day's depth of the
+order book) × what the market buys per day at your share. It flags thin, oversupplied or spiking markets,
+shows pattern payback, and explains every rule on the page under "How this is calculated".

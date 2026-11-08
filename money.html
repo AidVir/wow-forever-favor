@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money Making · WoW Forever Market Tools</title>
+<meta name="description" content="Profitable profession crafts for WoW Forever, ranked by sustainable gold per day from live EU PvP auction house prices and measured sales.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='9' width='24' height='18' rx='2' fill='%23b8862f'/%3E%3Cpath d='M4 14h24M16 9v18' stroke='%23412c0c' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="money.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="9" width="24" height="18" rx="2"/><path d="M4 14h24M16 9v18"/></svg>
+      <span class="brand-name"><small>WoW Forever</small><b>Market Tools</b></span>
+    </a>
+    <nav class="tabs" aria-label="Tools"><a href="./">Merchant's Favor</a><a href="leveling.html">Leveling</a><a href="writs.html">Writs</a><a href="money.html" aria-current="page">Money making</a></nav>
+    <div class="seg" role="radiogroup" aria-label="Faction">
+      <button data-faction="alliance" role="radio">Alliance</button>
+      <button data-faction="horde" role="radio">Horde</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <section class="intro">
+    <span class="eyebrow">Crafting for gold</span>
+    <h1>Money making</h1>
+    <p class="lead">Crafts that make money with today's auction house, ranked by what you can actually sell each day — not just by the biggest margin.</p>
+    <div class="intro-meta">
+      <p class="status" id="status">Loading recipes, auction house prices and sales…</p>
+      <span class="pill" id="market">EU · PvP</span>
+    </div>
+  </section>
+
+  <section class="panel settings" aria-label="Money-making settings">
+    <fieldset class="ctl mm-profs">
+      <legend>My professions and skill</legend>
+      <div id="profs" class="mm-prof-grid"></div>
+      <p class="hint" id="profhint"></p>
+    </fieldset>
+    <div class="controls">
+      <div class="ctl">
+        <label for="sort">Rank by</label>
+        <select id="sort">
+          <option value="daily">Daily profit (sustainable)</option>
+          <option value="craft">Profit per craft</option>
+          <option value="margin">Margin %</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label for="share">My share of the market</label>
+        <select id="share" aria-describedby="share-help">
+          <option value="0.1">10% (crowded)</option>
+          <option value="0.25">25%</option>
+          <option value="0.5">50% (default)</option>
+          <option value="0.75">75%</option>
+          <option value="1">100% (only seller)</option>
+        </select>
+      </div>
+      <div class="ctl"><label for="minprofit">Min profit per craft (silver)</label><input id="minprofit" type="number" min="0" step="1" value="10"></div>
+      <div class="ctl"><label for="minmargin">Min margin (%)</label><input id="minmargin" type="number" min="0" step="1" value="5"></div>
+    </div>
+    <details class="more">
+      <summary>More options <small>gathering · patterns · time value · reliability</small></summary>
+      <div class="controls">
+        <div class="ctl">
+          <label for="ownmode">My own gathered reagents cost</label>
+          <select id="ownmode">
+            <option value="market">What I'd get selling them (recommended)</option>
+            <option value="free">Nothing (my farming time is free)</option>
+          </select>
+        </div>
+        <fieldset class="ctl profs mm-own">
+          <legend>I gather my own</legend>
+          <label><input type="checkbox" data-own="herb"> Herbs</label>
+          <label><input type="checkbox" data-own="ore"> Ore, stone &amp; gems</label>
+          <label><input type="checkbox" data-own="leather"> Leather, hides &amp; scales</label>
+          <label><input type="checkbox" data-own="cloth"> Cloth</label>
+        </fieldset>
+        <div class="ctl">
+          <label for="patterns">Recipes I can use</label>
+          <select id="patterns">
+            <option value="all">Trainer + all patterns</option>
+            <option value="buyable">Trainer + patterns on AH / vendor</option>
+            <option value="trainer">Trainer only</option>
+          </select>
+        </div>
+        <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="0"></div>
+        <div class="ctl"><label for="minsales">Min units sold in history</label><input id="minsales" type="number" min="0" step="1" value="5"></div>
+        <div class="ctl">
+          <span class="lbl">Options</span>
+          <label class="chk"><input id="neutral" type="checkbox"> Also buy reagents from Blackwater AH</label>
+          <label class="chk"><input id="rare" type="checkbox"> I can use rare stations (Black Anvil, Moonwell…)</label>
+          <label class="chk"><input id="risky" type="checkbox"> Show unreliable markets</label>
+          <label class="chk"><input id="all" type="checkbox"> Show unprofitable and below-threshold crafts</label>
+        </div>
+      </div>
+      <p class="hint" id="share-help">Your share is how much of each item's measured daily sales you expect to win while relisting against other sellers. Time value is charged per craft. Items that sold fewer units than the minimum are treated as unreliable once there is enough history.</p>
+    </details>
+  </section>
+
+  <section class="panel" aria-label="Profitable crafts">
+    <div class="plan-sum" id="summary" aria-live="polite"></div>
+    <div id="salesnote"></div>
+    <div class="table-scroll sticky">
+      <table class="mm">
+        <thead><tr>
+          <th>Craft · tap for details</th>
+          <th class="num" title="What one unit nets you after the AH cut and expected lost deposits (or vendor price, if better)">Sell each</th>
+          <th class="num" title="Reagents for one craft, bought at the depth needed for a day's crafts">Cost / craft</th>
+          <th class="num">Profit / craft</th>
+          <th class="num" title="Units sold per day on your faction's AH · units listed now · days of supply">Market</th>
+          <th class="num" title="Units you can expect to sell per day at your share">You sell / day</th>
+          <th class="num">Profit / day</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="hidden"></p>
+  </section>
+
+  <details class="explain mm-how">
+    <summary>How this is calculated</summary>
+    <p><b>Sell price.</b> The lower of the cheapest listing on your faction's AH and the average price units actually sold at (from the hourly sales tracker), minus the 5% AH cut. If that is below the vendor sell price, the item is valued at vendor price instead and flagged <i>vendor it</i>. You sell on your own faction's AH; Blackwater is only used to buy reagents.</p>
+    <p><b>Deposit.</b> Assumed to be 15% of the item's vendor sell price per listing (the Classic faction-AH rate for a 12-hour auction). It is returned when the item sells, so only expired listings cost it: we charge one lost deposit per unit sold, two when the market is oversupplied. Items with no vendor price have no deposit.</p>
+    <p><b>Reagent cost.</b> For each reagent the cheapest of: the vendor, the AH, or crafting it yourself from a recipe you know (bolts, bars, leather, up to 2 levels deep; tick Mining to smelt). AH reagents are priced by walking the order book for a whole day's worth of crafts, not just the top listing, so a single cheap listing can't create a fake margin. When the AH can't supply a full day, your crafts per day are capped at what it can supply.</p>
+    <p><b>Own gathered reagents.</b> If you tick a category under <i>I gather my own</i>, those reagents cost what you would get by selling them on the AH instead (cheapest listing − 5%). That is the honest cost: farming isn't free, and crafting only pays if it beats selling the raw materials. You can switch this to <i>nothing</i> to see the profit including your farming time.</p>
+    <p><b>Profit per craft</b> = sell price × units made − reagent cost − your time value per craft. <b>Margin</b> = profit ÷ reagent cost.</p>
+    <p><b>Sales per day</b> come from listings that vanished between hourly snapshots before they could expire (cancelled listings look the same, so this can overstate demand a little). <b>Days of supply</b> = units listed ÷ units sold per day. With more than 2 days of supply on the AH your share shrinks in proportion (others are ahead of you in the queue); above 3 days the market is flagged <i>oversupplied</i>.</p>
+    <p><b>You sell per day</b> = sales per day × your share. <b>Profit per day</b> = profit per craft × crafts you can sell per day. This is what the list is ranked by: a big margin on something that sells once a week is worth less than a small one that sells fifty times a day.</p>
+    <p><b>Before 6 hours of sales history</b> there is no measured rate yet, so demand is guessed as a quarter of the units listed now, per day. Those rows are marked <i>guess</i>.</p>
+    <h3>Reliability flags</h3>
+    <p><i>few sales</i> (fewer units sold than your minimum), <i>one listing</i> (the price rests on one listing and nothing sold) and <i>price spike</i> (the recent price is over 1.5× the earlier average, which can mean manipulation) are hidden unless you tick <i>Show unreliable markets</i>. <i>thin reagents</i> (a day's reagents cost 15%+ more than the top listings), <i>oversupplied</i> and <i>reagent supply</i> are shown as warnings. Arrows next to a price show its trend where there is history.</p>
+    <h3>Patterns, stations and what's left out</h3>
+    <p>Pattern recipes show the pattern's cheapest AH or vendor price and how many crafts it takes to pay it back; patterns from Favor vendors or drops have no price. Recipes that need a rare station are hidden unless you tick that option.</p>
+    <p>Cooldown crafts (transmutes, Mooncloth and similar) are left out of the recipe data. Enchantments go on gear and can't be sold, so only enchanting items (rods, oils, wands) are listed. Items that were never listed or sold have no price; they may be bind-on-pickup (the data has no binding info) or just not traded yet. Each craft is ranked on its own: two crafts that use the same reagent compete for it.</p>
+    <p class="fine" id="perf"></p>
+  </details>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot">
+    <div>
+      <b>WoW Forever Market Tools</b>
+      <p>Live EU PvP auction house prices, turned into answers. Not affiliated with Blizzard Entertainment.</p>
+      <p id="updated"></p>
+    </div>
+    <nav aria-label="Tools (footer)">
+      <h2>Tools</h2>
+      <ul><li><a href="./">Merchant's Favor</a></li><li><a href="leveling.html">Profession leveling</a></li><li><a href="writs.html">Craftsman's Writs</a></li><li><a href="money.html">Money making</a></li></ul>
+    </nav>
+    <div>
+      <h2>Project</h2>
+      <ul><li><a href="https://github.com/AidVir/wow-forever-favor">Source on GitHub</a></li><li><a href="https://www.wowhead.com/forever">Wowhead Forever</a></li></ul>
+    </div>
+  </div>
+</footer>
+<script type="module" src="money.js"></script>
+</body>
+</html>
