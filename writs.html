@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Craftsman's Writs · WoW Forever</title>
+<meta name="description" content="Cheapest Craftsman's Writs for Azeroth Commerce Authority / Durotar Supply and Logistics reputation in WoW Forever, priced from the EU PvP auction house.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='9' width='24' height='18' rx='2' fill='%23b8862f'/%3E%3Cpath d='M4 14h24M16 9v18' stroke='%23412c0c' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="9" width="24" height="18" rx="2"/><path d="M4 14h24M16 9v18"/></svg>
+      <div>
+        <h1>Craftsman's Writs</h1>
+        <p class="sub">WoW Forever · trade-faction reputation · <span id="market">EU · PvP</span></p>
+      </div>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Faction">
+      <button data-faction="alliance" role="radio">Alliance</button>
+      <button data-faction="horde" role="radio">Horde</button>
+    </div>
+  </div>
+  <nav class="wrap tabs"><a href="./">Merchant's Favor</a><a href="leveling.html">Profession leveling</a><a href="writs.html" aria-current="page">Craftsman's Writs</a></nav>
+</header>
+
+<main class="wrap">
+  <section class="status" id="status">Loading…</section>
+  <section class="hero" id="hero"></section>
+
+  <section class="panel controls">
+    <div class="ctl">
+      <label for="own">Writs</label>
+      <select id="own"><option value="have">I already have them</option><option value="buy">Buy them on the AH</option></select>
+    </div>
+    <div class="ctl">
+      <span class="lbl">Also buy from</span>
+      <label class="chk"><input id="neutral" type="checkbox"> Blackwater AH (neutral)</label>
+    </div>
+    <fieldset class="ctl profs">
+      <legend>I can craft with</legend>
+      <label><input type="checkbox" value="Alchemy"> Alchemy</label>
+      <label><input type="checkbox" value="Blacksmithing"> Blacksmithing</label>
+      <label><input type="checkbox" value="Engineering"> Engineering</label>
+      <label><input type="checkbox" value="Leatherworking"> Leatherworking</label>
+      <label><input type="checkbox" value="Tailoring"> Tailoring</label>
+    </fieldset>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>All 150 writs, cheapest reputation first</h2>
+      <div class="filters" id="ranks"></div>
+    </div>
+    <div class="filters" id="profFilter" style="margin-bottom:8px"></div>
+    <div class="table-scroll">
+      <table class="writs">
+        <thead><tr><th>Writ</th><th class="num">Rep</th><th>Deliver</th><th class="num">Item cost</th><th class="num">Writ</th><th class="num">Per 100 rep</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="hint">Item cost is the cheaper of buying the item on the auction house or crafting it from reagents (only for professions you tick). Writs tagged for the other faction are hidden. The "Writ" column shows the AH price of the writ itself.</p>
+  </section>
+
+  <section class="panel notes">
+    <h2>How Craftsman's Writs work</h2>
+    <ol>
+      <li><b>Get a writ.</b> Sealed Journeyman's, Expert's and Artisan's Writ envelopes drop from mobs from level 10. Opening one gives a random writ of that rank. Writs and envelopes are tradeable, so you can also buy them on the auction house.</li>
+      <li><b>Deliver the item.</b> Each writ starts a quest to deliver one crafted item (Crafted Solid Shot needs 200) to an NPC. You don't need the profession: buying the item works too.</li>
+      <li><b>Reward.</b> Journeyman 75, Expert 125, Artisan 200 reputation with the Azeroth Commerce Authority (Alliance) or Durotar Supply and Logistics (Horde), often plus a small coin pouch (about 35s for Journeyman). Writs give no Merchant's Favor.</li>
+      <li><b>Limits.</b> Each specific writ can be completed once per day; different writs can be done the same day. A Forger's Quill (15 Merchant's Favor at Honored) rerolls a writ into another of the same rank.</li>
+      <li><b>Your first crate or writ</b> also completes <em>Shipping Label</em>: 2,000 reputation and 50 Merchant's Favor, once per character.</li>
+    </ol>
+    <p class="fine">Writ data from the live client (build 1.60.1.70862) via foreverchanges.pro and Wowhead Forever. Coin pouch values and the daily rule come from early guides and may change. Not affiliated with Blizzard Entertainment.</p>
+  </section>
+</main>
+
+<footer class="wrap foot"><span id="updated"></span><a href="https://github.com/AidVir/wow-forever-favor">Source on GitHub</a></footer>
+<script type="module" src="writs.js"></script>
+</body>
+</html>

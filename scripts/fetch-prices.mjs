@@ -5,7 +5,8 @@
 // Optional: REGION (default eu), RULESET_ID (default 1 = PvP), PROBE=1 to just print the house index.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { CRATES, ITEMS, RECIPES, ITEM_ID } from "../data/crates.js";
+import { CRATES, ITEMS } from "../data/crates.js";
+import { WRIT_ITEM_IDS } from "../data/writs.js";
 
 const REGION = process.env.REGION || "eu";
 const RULESET_ID = Number(process.env.RULESET_ID || 1);
@@ -15,7 +16,7 @@ const STATIC = `static-forever-${REGION}`;
 const OUT = new URL("../data/prices.json", import.meta.url);
 const CRATE_IDS = new URL("../data/crate-ids.json", import.meta.url);
 const HOUSES_FILE = new URL("../data/houses.json", import.meta.url);
-const MAX_UNITS = 400; // keep enough cheap units per item to price any bundle
+const MAX_UNITS = 1500; // keep enough cheap units per item to price a full 1-300 route
 
 async function token() {
   const id = process.env.BLIZZARD_CLIENT_ID, secret = process.env.BLIZZARD_CLIENT_SECRET;
@@ -30,11 +31,14 @@ async function token() {
 }
 
 let TOKEN;
-async function api(path, ns, { allow404 = false } = {}) {
+async function api(path, ns, { allow404 = false, ims = null } = {}) {
   const sep = path.includes("?") ? "&" : "?";
   const url = `${HOST}${path}${sep}namespace=${ns}&locale=en_GB`;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}`, "Accept-Encoding": "gzip" } });
+    const headers = { Authorization: `Bearer ${TOKEN}`, "Accept-Encoding": "gzip" };
+    if (ims) headers["If-Modified-Since"] = ims;
+    const r = await fetch(url, { headers });
+    if (r.status === 304) return { notModified: true, lastModified: ims };
     if (r.status === 404 && allow404) return null;
     if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 2000 * (attempt + 1))); continue; }
     if (!r.ok) throw new Error(`${r.status} ${url}`);
@@ -115,7 +119,7 @@ async function scanHouse(houseId, wanted) {
   }
   const c = await api(`/data/wow/ruleset/${RULESET_ID}/auctions/${houseId}/commodities`, DYN, { allow404: true });
   if (c) {
-    lastModified ||= c.lastModified;
+    lastModified = c.lastModified || lastModified; // track the commodities snapshot time
     for (const x of c.json.auctions || []) {
       total++;
       const id = x.item?.id;
@@ -132,8 +136,22 @@ async function main() {
   const index = await houseIndex();
   if (process.env.PROBE) { console.log(JSON.stringify(index, null, 2)); return; }
   const houses = await pickHouses(index);
+  // Blizzard publishes a new snapshot about once an hour. Skip the scan (and the commit) if nothing changed.
+  const prevOut = existsSync(OUT) ? JSON.parse(await readFile(OUT, "utf8")) : null;
+  if (prevOut && !process.env.FORCE) {
+    let same = true;
+    for (const [faction, hid] of Object.entries(houses)) {
+      const known = prevOut.factions?.[faction]?.lastModified;
+      if (!known) { same = false; break; }
+      const r = await api(`/data/wow/ruleset/${RULESET_ID}/auctions/${hid}/commodities`, DYN, { allow404: true, ims: known });
+      if (!r || (!r.notModified && r.lastModified !== known)) { same = false; break; }
+    }
+    if (same) { console.log("No new auction snapshot since", prevOut.factions.alliance?.lastModified, "- nothing to do"); return; }
+  }
   const crateIds = await resolveCrateIds();
-  const wanted = new Set([...Object.keys(ITEMS).map(Number), ...Object.values(crateIds)]);
+  const recipes = JSON.parse(await readFile(new URL("../data/recipes.json", import.meta.url), "utf8"));
+  const crateItems = new Set([...Object.keys(ITEMS).map(Number), ...Object.values(crateIds)]);
+  const wanted = new Set([...crateItems, ...Object.keys(recipes.items).map(Number), ...WRIT_ITEM_IDS]);
   const factions = {};
   for (const [faction, hid] of Object.entries(houses)) {
     const scan = await scanHouse(hid, wanted);
@@ -147,6 +165,7 @@ async function main() {
   for (const [f, d] of Object.entries(factions)) {
     out.history[f] ||= {};
     for (const [id, l] of Object.entries(d.items)) {
+      if (!crateItems.has(Number(id))) continue;
       const h = (out.history[f][id] ||= []);
       h.push([out.updated.slice(0, 13), l[0][0]]);
       while (h.length > 72) h.shift();

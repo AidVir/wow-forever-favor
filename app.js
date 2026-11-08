@@ -271,7 +271,7 @@ async function load() {
     if (!r.ok) throw new Error(r.status);
     DATA = await r.json();
     const f = Object.values(DATA.factions);
-    $("#status").innerHTML = `Prices from the ${DATA.region} ${DATA.ruleset.name} auction houses, updated <b>${ago(DATA.updated)}</b>. Refreshes hourly.`;
+    $("#status").innerHTML = `Prices from the ${DATA.region} ${DATA.ruleset.name} auction houses, updated <b>${ago(DATA.updated)}</b>. Checked every 10 min; Blizzard publishes a new snapshot about hourly.`;
     $("#updated").textContent = `Scanned ${new Date(DATA.updated).toLocaleString("en-GB")} · ${f.map(x => x.totalAuctions.toLocaleString("en-GB")).join(" / ")} auctions`;
     render();
   } catch (e) {
