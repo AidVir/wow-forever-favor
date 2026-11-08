@@ -1,0 +1,4 @@
+{
+  "_note": "Faction -> auction house id per region/ruleset. Every ruleset index lists the same 15 houses; the ruleset is encoded in the house id. Verified 2026-11-08 by matching prices with forevermastery.com (EU PvP = 110/113/116, Normal = 111/114/117, RP = 119-121, RP-PvP = 123-125).",
+  "eu": { "1": { "alliance": 110, "horde": 113, "neutral": 116 } }
+}

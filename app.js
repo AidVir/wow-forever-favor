@@ -14,9 +14,10 @@ const state = {
   profs: new Set(store.get("profs", [])),
   cat: store.get("cat", "All"),
   goal: store.get("goal", 1000),
+  neutral: store.get("neutral", false),
   open: new Set(),
 };
-let DATA = null;
+let DATA = null, LIVE = {};
 
 // ---------- money
 function gold(c, { short = false } = {}) {
@@ -90,9 +91,12 @@ function evalCrate(book, c) {
 
 // ---------- render
 function bookFor(faction) {
-  const src = DATA.factions[faction]?.items || {};
   const book = {};
-  for (const [id, l] of Object.entries(src)) book[id] = l.map(x => x.slice());
+  const srcs = [DATA.factions[faction]?.items || {}];
+  if (state.neutral && DATA.factions.neutral) srcs.push(DATA.factions.neutral.items);
+  for (const src of srcs)
+    for (const [id, l] of Object.entries(src)) (book[id] ||= []).push(...l.map(x => x.slice()));
+  for (const l of Object.values(book)) l.sort((a, b) => a[0] - b[0]);
   return book;
 }
 
@@ -103,9 +107,10 @@ function render() {
   document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-checked", b.dataset.faction === state.faction));
   document.body.dataset.faction = state.faction;
   const f = DATA.factions[state.faction];
-  $("#market").textContent = `${DATA.region} · ${DATA.ruleset.name} · ${f ? f.house.name : "—"}`;
+  $("#market").textContent = `${DATA.region} · ${DATA.ruleset.name} · ${f ? f.house.name : "—"}${state.neutral ? " + Blackwater" : ""}`;
 
   const book = bookFor(state.faction);
+  LIVE = bookFor(state.faction);
   const all = CRATES.map(c => evalCrate(book, c));
   const rows = all.filter(r => available(r.c) && (state.cat === "All" || r.c.cat === state.cat))
     .sort((a, b) => (a.perFavor ?? Infinity) - (b.perFavor ?? Infinity));
@@ -145,7 +150,7 @@ function rowHtml(r) {
   if (open) {
     html += `<tr class="detail"><td colspan="7"><div class="bundles">${r.bundles.map(bd => {
       const id = bd.id;
-      const unit = listingsFor(DATA.factions[state.faction]?.items || {}, id)[0]?.[0];
+      const unit = listingsFor(LIVE, id)[0]?.[0];
       const craft = bd.acq?.how === "craft"
         ? `<div class="via">Craft with ${bd.acq.prof}: ${bd.acq.mats.map(([m, q]) => `${q} × ${ITEMS[m]}`).join(", ")}</div>` : "";
       return `<div class="bd${bd === r.best ? " best" : ""}">
@@ -154,7 +159,7 @@ function rowHtml(r) {
         <div class="bd-meta">from ${gold(unit)} each · ${bd.listed.toLocaleString("en-GB")} listed${trend(id)}</div>${craft}
       </div>`;
     }).join("")}</div>
-    ${r.crateId ? `<p class="fine">Crate item: <a href="https://www.wowhead.com/forever/item=${r.crateId}" target="_blank" rel="noopener">${r.c.name}</a> · ${unitsListed(DATA.factions[state.faction]?.items || {}, r.crateId)} listed</p>` : ""}
+    ${r.crateId ? `<p class="fine">Crate item: <a href="https://www.wowhead.com/forever/item=${r.crateId}" target="_blank" rel="noopener">${r.c.name}</a> · ${unitsListed(LIVE, r.crateId)} listed</p>` : ""}
     </td></tr>`;
   }
   return html;
@@ -244,6 +249,8 @@ function bind() {
   const toggle = tr => { const k = tr.dataset.key; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); };
   $("#rows").onclick = e => { const tr = e.target.closest("tr.row"); if (tr && !e.target.closest("a")) toggle(tr); };
   $("#rows").onkeydown = e => { const tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); } };
+  const nt = $("#neutral"); nt.checked = state.neutral;
+  nt.onchange = () => { state.neutral = nt.checked; store.set("neutral", state.neutral); render(); };
   const goal = $("#goal"); goal.value = state.goal;
   goal.oninput = () => { state.goal = Number(goal.value) || 0; store.set("goal", state.goal); renderPlan(); };
   const presets = [["Recipe (~180)", 180], ["Certification", 1000], ["Packmule Treat", 1500], ["Pack Kodo", 6000]];
