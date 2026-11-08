@@ -24,17 +24,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The previous snapshot's listings are needed to see what sold since; kept in the Actions cache.
+      - name: Restore previous snapshot
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache
+          key: ah-state-${{ github.run_id }}
+          restore-keys: ah-state-
       - name: Fetch EU PvP auction data
+        id: fetch
         env:
           BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
           BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
           FORCE: ${{ github.event_name != 'schedule' && '1' || '' }}
         run: node scripts/fetch-prices.mjs
+      - name: Save snapshot
+        if: steps.fetch.outputs.scanned == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache
+          key: ah-state-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Commit prices
         run: |
           git config user.name "price-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/prices.json data/crate-ids.json
+          git add data/prices.json data/crate-ids.json data/sales.json
           git diff --cached --quiet && exit 0
           git commit -m "Update AH prices $(date -u +'%Y-%m-%d %H:%M')"
           git pull --rebase
