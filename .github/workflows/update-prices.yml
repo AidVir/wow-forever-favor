@@ -1,15 +1,24 @@
 name: Update AH prices
 
+# How it keeps running: a manual or scheduled run checks for a new auction snapshot every 10 minutes
+# for about 5.5 hours, then starts the next run itself, so updates don't depend on GitHub's cron
+# (which can take hours to start on a new repo and often skips runs). The cron is only a backup that
+# restarts the chain if it ever breaks. Push runs scan once and stop.
 on:
   schedule:
-    - cron: "3,13,23,33,43,53 * * * *"   # every 10 min, off the busy :00 mark; the script only downloads when Blizzard has a new snapshot
+    - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long this run keeps checking before it starts the next run"
+        default: "330"
   push:
     branches: [main]
     paths: ["scripts/**", "data/crates.js", "data/writs.js", "data/recipes.json", "data/houses.json", ".github/workflows/update-prices.yml"]
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: update-prices
@@ -18,7 +27,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,25 +40,39 @@ jobs:
           path: .cache
           key: ah-state-${{ github.run_id }}
           restore-keys: ah-state-
-      - name: Fetch EU PvP auction data
+      - name: Fetch EU PvP auction data (every 10 min)
         id: fetch
         env:
           BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
           BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
-          FORCE: ${{ github.event_name != 'schedule' && '1' || '' }}
-        run: node scripts/fetch-prices.mjs
+          EVENT: ${{ github.event_name }}
+          MINUTES: ${{ inputs.minutes || '330' }}
+        run: |
+          git config user.name "price-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          end=$(( $(date +%s) + MINUTES * 60 ))
+          first=1
+          while :; do
+            force=""; [ "$first" = 1 ] && [ "$EVENT" = push ] && force=1
+            FORCE=$force node scripts/fetch-prices.mjs || echo "::warning::fetch failed, trying again next round"
+            first=0
+            git add data/prices.json data/crate-ids.json data/sales.json
+            if ! git diff --cached --quiet; then
+              git commit -q -m "Update AH prices $(date -u +'%Y-%m-%d %H:%M')"
+              { git pull -q --rebase && git push -q; } || echo "::warning::push failed, will retry with the next snapshot"
+            fi
+            [ "$EVENT" = push ] && break
+            [ "$(date +%s)" -lt "$end" ] || break
+            sleep 600
+          done
       - name: Save snapshot
-        if: steps.fetch.outputs.scanned == 'true'
+        if: ${{ !cancelled() && steps.fetch.outputs.scanned == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .cache
           key: ah-state-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Commit prices
-        run: |
-          git config user.name "price-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/prices.json data/crate-ids.json data/sales.json
-          git diff --cached --quiet && exit 0
-          git commit -m "Update AH prices $(date -u +'%Y-%m-%d %H:%M')"
-          git pull --rebase
-          git push
+      - name: Start the next run
+        if: ${{ !cancelled() && github.event_name != 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run update-prices.yml --ref main -R ${{ github.repository }}
