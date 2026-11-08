@@ -297,6 +297,7 @@ function plan(future = null) {
   for (let s = Math.max(1, state.from); s < end; ) {
     const ctx = { book, makers, skill: s, inv, hasTool };
     let best = null, bestFast = null, cur = null;
+    const cands = []; // every usable recipe at this point (for the step's alternative)
     const prev = steps[steps.length - 1];
     for (const r of prof.recipes) {
       if (r.learn > s || s >= r.grey || !allowed(r)) continue;
@@ -329,7 +330,9 @@ function plan(future = null) {
       const net = cost - back;
       const once = pat + (tools?.cost || 0); // pattern + tools: paid once, amortised over ~5 points
       const per = ((net >= 0 ? net / c : net) + timeCost / c + once / 5) / r.ups;
-      const cand = { r, per, cost, back, c, plan, tools, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
+      const run = ((net >= 0 ? net / c : net) + timeCost / c) / r.ups; // per point, without one-time costs
+      const cand = { r, per, run, once, cost, back, c, plan, tools, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
+      cands.push(cand);
       if (!best || per < best.per) best = cand;
       if (!cand.slow && (!bestFast || per < bestFast.per)) bestFast = cand;
       if (prev && prev.r === r) cur = cand;
@@ -351,6 +354,10 @@ function plan(future = null) {
       break;
     }
     const { r } = best;
+    // runner-up at this point: the cheapest other recipe (a fast one when "avoid slow recipes" is on)
+    const others = cands.filter(x => x.r !== r);
+    const pool = state.fast && others.some(x => !x.slow) ? others.filter(x => !x.slow) : others;
+    const alt = pool.reduce((a, x) => !a || x.per < a.per ? x : a, null);
     if (!learned.has(r.id)) {
       const pc = patternCost(book, r); learned.set(r.id, pc);
       if (pc.cost) { total += pc.cost; if (pc.how === "ah") consume(book, pc.id, 1); }
@@ -371,6 +378,12 @@ function plan(future = null) {
       steps.push(last);
     }
     last.toolsGot.push(...got);
+    // the step's alternative: the runner-up at its first point; add up what it would cost over the step
+    if (!last.alt && alt) last.alt = { r: alt.r, extra: 0, pts: 0, once: alt.once, slow: alt.slow, c: alt.c };
+    if (last.alt) {
+      const a = cands.find(x => x.r === last.alt.r);
+      if (a) { last.alt.extra += (a.run - best.run) * r.ups; last.alt.pts += r.ups; }
+    }
     // buy the whole crafts this step has "earned" so far, so later prices reflect what we bought
     last.exp += 1 / best.c; last.to = s + r.ups;
     const due = Math.floor(last.exp + 1e-9) - last.crafts;
@@ -403,6 +416,24 @@ function sellInfo(st, p) {
     : st.onAh ? `${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
     : rate > 0 ? `sells ~${perDay(rate)}/day, not above vendor` : "none sold";
   return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note };
+}
+// "Alternative" fact in a step's details: the runner-up recipe and what using it would change.
+function altFact(st) {
+  const a = st.alt; if (!a || !a.pts) return "";
+  const r = a.r;
+  const reag = r.reagents.map(([id, q]) => `${q} × ${esc(ITEMS[id]?.n || id)}`).join(", ");
+  const diff = Math.round(a.extra);
+  const stepPts = st.to - st.from;
+  const span = a.pts < stepPts ? `over the ${a.pts} of ${stepPts} points where it still gives skill-ups` : `over these ${a.pts} points`;
+  const cost = diff >= 0 ? `about ${gold(diff)} more ${span}` : `about ${gold(-diff)} cheaper ${span}; the route stays on one recipe rather than switching for a small saving`;
+  const extras = [
+    a.once > 0 ? `+ ${gold(a.once)} once for its ${r.source === "item" ? "pattern" : "tools"}` : "",
+    r.source === "item" && !(a.once > 0) ? patternText(r, patternCost(BOOK0, r)) : "",
+    a.c < 1 ? `${(1 / a.c).toFixed(1)} crafts per point` : "",
+  ].filter(Boolean).join(" · ");
+  return `<div class="alt-fact"><span class="k">Alternative</span><span>${r.item ? wh(r.item, r.name) : esc(r.name)}</span>
+    <small>${reag}</small><small>${cost}${extras ? " · " + extras : ""}</small>
+    <button class="chip" data-ex="${st.r.id}" title="Excludes ${esc(st.r.name)} from the whole route and re-plans">Use it instead</button></div>`;
 }
 const OPEN_STEPS = new Set(); // expanded step rows (not saved)
 
@@ -481,6 +512,7 @@ function render() {
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
         ${pattern ? `<div><span class="k">Pattern</span><span>${pattern}</span></div>` : ""}
         ${toolsNeed.length ? `<div><span class="k">Tools</span><span>${toolsNeed.map(esc).join(", ")}</span><small>bought or made once, the first time a step needs them</small></div>` : ""}
+        ${altFact(st)}
         <div><span class="k">Crafts per point</span><span>${(st.crafts / Math.max(1, st.to - st.from)).toFixed(1)}</span><small>${st.crafts} crafts for ${st.to - st.from} points</small></div>
         ${s ? `<div class="${s.vendorBetter ? "better" : ""}"><span class="k">Vendor everything</span><span>${gold(st.vendor)}</span><small>${pl(st.vendor - st.cost)}</small></div>
         <div class="${s.ahBetter ? "better" : ""}"><span class="k">Sell on the AH (est.)</span><span>${gold(st.ah)}</span><small>${pl(st.ah - st.cost)} · ${s.note}</small></div>` : ""}

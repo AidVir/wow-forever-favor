@@ -519,3 +519,8 @@ table.steps tr.train .meta { display: block; margin-top: 2px; }
 .tag.toolget { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .tag.inv, .tag.keep { color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
 .tag.toolget a { color: inherit; }
+
+/* leveling: alternative recipe in a step's details */
+.alt-fact { grid-column: span 2; }
+.alt-fact .chip { justify-self: start; margin-top: 4px; }
+@media (max-width: 760px) { .alt-fact { grid-column: 1 / -1; } }

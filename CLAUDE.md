@@ -131,6 +131,11 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
 - **Two passes:** `render()` calls `plan(plan().demand)`. The second pass credits crafting a reagent
   the first pass needed at 90% of what buying it costs (`replaceUnit`, up to the remaining demand), so
   intermediates get made early for skill points, as guides do with bolts / grinding stones / powder.
+- **Alternatives:** every usable recipe at a skill point is a candidate (`cands`); the step keeps the
+  runner-up at its first point (a fast one when "avoid slow recipes" is on) and adds up
+  `(alt.run − best.run)` over the points where it still works (`run` = per-point cost without the
+  one-time pattern/tool cost, shown separately). `altFact()` renders it; "Use it instead" excludes
+  the step's recipe (same as ✕).
 - **Pattern sources:** `recipe.src` = `{k:"vendor", npc, cost, faction}` | `{k:"quest", quest}` |
   `{k:"drop", from}` | `{k:"new"}` (Forever-only, not in Classic data), from wow-classic-items.
   "Recipes I can use": `all` (every pattern, unknown ones free), `buyable` (default: AH / vendor /
