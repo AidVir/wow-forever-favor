@@ -120,6 +120,22 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   cap, a "Train X" row is shown with `TRAINERS` (Forever Expert/Artisan trainers per faction), and
   "Character level" ends the route at the last rank that level can train. The shopping list says how
   much is needed before 225 (Artisan needs level 35).
+- **Tools:** `recipe.tools` = required tool categories (from the client's `SpellTotems`); top-level
+  `recipes.json` `tools.categories[c] = {n, ok:[itemIds that satisfy it]}`, `tools.items[id] = {cat, bop, vendor}`.
+  The route gets each tool once, the first time a step needs it (`toolsNeeded` / `toolGet`): vendor
+  (`VENDOR_TOOLS` in `scripts/client-extras.mjs`), AH (not for BoP rods) or crafted with this profession.
+  Its cost is amortised like a pattern; the step shows "first: buy/craft X".
+- **Inventory:** step outputs go into lots (`lots`, `takeInv`); later steps use them before buying
+  (`acquire` takes `ctx.inv`, valued at the sale credit you give up). Using an item undoes its sale
+  credit, so totals stay cash-correct. Steps show "keep N for later" / "uses N from earlier steps".
+- **Two passes:** `render()` calls `plan(plan().demand)`. The second pass credits crafting a reagent
+  the first pass needed at 90% of what buying it costs (`replaceUnit`, up to the remaining demand), so
+  intermediates get made early for skill points, as guides do with bolts / grinding stones / powder.
+- **Pattern sources:** `recipe.src` = `{k:"vendor", npc, cost, faction}` | `{k:"quest", quest}` |
+  `{k:"drop", from}` | `{k:"new"}` (Forever-only, not in Classic data), from wow-classic-items.
+  "Recipes I can use": `all` (every pattern, unknown ones free), `buyable` (default: AH / vendor /
+  quest), `vendor` (vendor + quest, no drops), `trainer`. `scripts/client-extras.mjs` writes `tools`
+  and `src` without Blizzard credentials (`node scripts/client-extras.mjs`); `build-recipes.mjs` runs it too.
 - **Learn skill:** trainer recipes use Classic's learn skill shifted by how far Forever moved the
   yellow threshold (`scripts/learn-levels.mjs`, also used by `build-recipes.mjs`). Run
   `node scripts/learn-levels.mjs` to re-apply it to `recipes.json` without Blizzard credentials.

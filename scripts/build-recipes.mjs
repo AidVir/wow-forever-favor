@@ -11,6 +11,7 @@
 import { writeFile } from "node:fs/promises";
 import { WRIT_ITEM_IDS } from "../data/writs.js";
 import { parseCsv, skillLineAbility, applyShift, CLASSIC_BUILD } from "./learn-levels.mjs";
+import { addExtras, loadTables } from "./client-extras.mjs";
 
 const BUILD = process.env.FOREVER_BUILD || "1.60.1.70862";
 const PROFS = { 186: "Mining", 171: "Alchemy", 164: "Blacksmithing", 333: "Enchanting", 202: "Engineering", 165: "Leatherworking", 197: "Tailoring", 185: "Cooking", 129: "First Aid" };
@@ -130,7 +131,10 @@ async function main() {
     items[id] = { n: it?.name || w?.name || `Item ${id}`, q: it?.quality?.type?.[0] || "C", s: it?.sell_price ?? w?.sellPrice ?? 0 };
     if (w?.vendorPrice) items[id].v = w.vendorPrice;
   }
-  await writeFile(OUT, JSON.stringify({ build: BUILD, generated: new Date().toISOString(), professions, items }));
+  const out = { build: BUILD, generated: new Date().toISOString(), professions, items };
+  // tools each recipe needs + where patterns come from (client tables + Classic item data)
+  console.log("adding tools and pattern sources", addExtras(out, await loadTables(BUILD, wci)));
+  await writeFile(OUT, JSON.stringify(out));
   console.log("items", ids.length, "->", OUT.pathname);
 }
 main().catch(e => { console.error(e); process.exit(1); });

@@ -7,7 +7,7 @@ const state = {
   prof: store.get("lv:prof", "Alchemy"),
   from: store.get("lv:from", 1),
   to: store.get("lv:to", 300),
-  patterns: (v => typeof v === "string" ? v : "all")(store.get("lv:patterns", "all")),
+  patterns: (v => ["all", "buyable", "vendor", "trainer"].includes(v) ? v : "buyable")(store.get("lv:patterns", "buyable")),
   time: store.get("lv:time", 5),
   level: store.get("lv:level", 60),
   fast: store.get("lv:fast", true),
@@ -56,18 +56,24 @@ const color = (r, s) => s < r.yellow ? "orange" : s < r.green ? "yellow" : s < r
 
 function profData() { return REC.professions.find(p => p.name === state.prof); }
 
-// Cheapest way to get `qty` of an item right now: vendor (unlimited), AH (consumes book), or craft it
+// Cheapest way to get `qty` of an item right now: what earlier steps made (ctx.inv, valued at what you'd
+// otherwise sell it for), vendor (unlimited), AH (consumes book; not for bind-on-pickup items) or craft it
 // with this profession if a recipe is known at the current skill. Returns {cost, plan:[[kind,id,qty]]}.
-function acquire(ctx, id, qty, depth = 0) {
+function acquire(ctx, id, qty, depth = 0, noAh = false) {
+  const have = ctx.inv ? Math.min(qty, ctx.inv.qty(id)) : 0;
+  const invCost = have * (have ? ctx.inv.value(id) : 0);
+  if (have === qty) return { cost: invCost, plan: [["inv", id, have, invCost]] };
+  const need = qty - have;
   const it = ITEMS[id];
   let best = null;
-  const ah = buyCost(ctx.book, id, qty);
-  if (ah != null) best = { cost: ah, plan: [["ah", id, qty]] };
-  if (it?.v != null && (!best || it.v * qty < best.cost)) best = { cost: it.v * qty, plan: [["vendor", id, qty]] };
+  const ah = noAh ? null : buyCost(ctx.book, id, need);
+  if (ah != null) best = { cost: ah, plan: [["ah", id, need]] };
+  if (it?.v != null && (!best || it.v * need < best.cost)) best = { cost: it.v * need, plan: [["vendor", id, need]] };
   if (depth < 2) {
     for (const r of ctx.makers.get(id) || []) {
       if ((!r.helper && r.learn > ctx.skill) || !allowed(r)) continue;
-      const crafts = Math.ceil(qty / r.qty);
+      if (r.tools && ctx.hasTool && !r.tools.every(ctx.hasTool)) continue; // can't make it without its tool yet
+      const crafts = Math.ceil(need / r.qty);
       let cost = 0, plan = [["craft", r.id, crafts]];
       for (const [rid, rq] of r.reagents) {
         const a = acquire(ctx, rid, rq * crafts, depth + 1);
@@ -77,6 +83,8 @@ function acquire(ctx, id, qty, depth = 0) {
       if (cost != null && (!best || cost < best.cost)) best = { cost, plan };
     }
   }
+  if (!best) return null;
+  if (have) { best.cost += invCost; best.plan.unshift(["inv", id, have, invCost]); }
   return best;
 }
 let BOOK0 = {};
@@ -85,20 +93,40 @@ function allowed(r) {
   if (r.needs && state.stationsOff.has(r.needs)) return false;
   if (r.source === "item") {
     if (state.patterns === "trainer") return false;
+    if (state.patterns === "vendor" && !["vendor", "quest"].includes(r.src?.k)) return false;
     if (state.patterns === "buyable" && patternCost(BOOK0, r).unknown) return false;
   }
   return true;
 }
-// One-time cost to learn a pattern recipe: AH price of the cheapest teaching item, else vendor price, else unknown (0).
+// One-time cost to learn a pattern recipe: the cheapest of the teaching item on the AH, its vendor
+// (Classic price), or free from a quest. Unknown = not listed and no vendor/quest source (cost 0).
 function patternCost(book, r) {
   if (r.source !== "item") return { cost: 0 };
   let best = null;
   for (const id of r.recipeItems) {
-    const p = minPrice(book, id); const v = ITEMS[id]?.v;
-    for (const c of [p, v]) if (c != null && (!best || c < best.cost)) best = { cost: c, id };
+    const p = minPrice(book, id);
+    if (p != null && (!best || p < best.cost)) best = { cost: p, id, how: "ah" };
   }
+  const s = r.src;
+  if (s?.k === "vendor" && s.cost != null && (!best || s.cost < best.cost)) best = { cost: s.cost, how: "vendor" };
+  if (s?.k === "quest" && !best) best = { cost: 0, how: "quest" };
   return best || { cost: 0, unknown: true };
 }
+// Where a pattern comes from, for the step's tag and details.
+function patternText(r, pc) {
+  const s = r.src;
+  if (pc?.how === "ah") return `pattern ${gold(pc.cost)} on AH`;
+  if (s?.k === "vendor") return `pattern from ${esc(s.npc)}${s.faction && s.faction !== "Both" ? ` (${esc(s.faction)})` : ""}, ${gold(s.cost)}`;
+  if (s?.k === "quest") return `pattern from the quest "${esc(s.quest)}"`;
+  if (s?.k === "drop") return `pattern drops${s.from ? ` from ${esc(s.from)}` : ""}, not on the AH now`;
+  if (s?.k === "new") return "new Forever pattern, source not in our data (Merchant's Favor vendors sell many)";
+  return "pattern: vendor or drop, source not in our data";
+}
+// --- tools ------------------------------------------------------------------------------
+// Recipes can need a tool (Blacksmith Hammer, Arclight Spanner, Gyromatic Micro-Adjustor, Runed rods…).
+// The route gets each one once, the cheapest way: vendor, AH (not for bind-on-pickup rods) or crafting it.
+const toolName = c => REC.tools?.categories?.[c]?.n || "tool";
+function toolOptions(c) { return REC.tools?.categories?.[c]?.ok || []; }
 
 // --- selling the results -------------------------------------------------------------
 // Blizzard's API shows listings, not sales. The price job compares hourly snapshots and counts
@@ -144,10 +172,18 @@ function saleModel(book0) {
     if (commit) { made.set(id, (made.get(id) || 0) + units); if (onAh) sold.set(id, (sold.get(id) || 0) + onAh); }
     return { vendor: vend * units, ah: onAh * unit + (units - onAh) * vend, onAh, unit };
   }
-  return { value, sold, made, ahUnit, stat, info };
+  // a later step used `units` of what was made: they are not sold after all
+  function unsell(id, units, onAh) {
+    made.set(id, Math.max(0, (made.get(id) || 0) - units));
+    sold.set(id, Math.max(0, (sold.get(id) || 0) - onAh));
+  }
+  return { value, unsell, sold, made, ahUnit, stat, info };
 }
 
-function plan() {
+// `future`: reagents (item id -> units) a first pass of the route used. Crafting those for skill-ups
+// counts at what buying them would cost, and later steps use them up ("keep N for later"), like the
+// written guides do with grinding stones, bolts and blasting powder.
+function plan(future = null) {
   const prof = profData();
   BOOK0 = makeBook(PRICES, state.faction, state.neutral);
   const book = makeBook(PRICES, state.faction, state.neutral);
@@ -158,31 +194,91 @@ function plan() {
   const steps = []; const shopping = new Map(); let total = 0, stuck = null;
   const sales = saleModel(BOOK0);
   let resaleVendor = 0, resaleAh = 0;
-  // record selling the output of n crafts of a step
-  function sellOutput(st, n) {
-    if (!st.r.item || n <= 0) return;
-    const v = sales.value(st.r.item, st.r.qty * n, true);
-    st.vendor += v.vendor; st.ah += v.ah; st.onAh += v.onAh;
-    resaleVendor += v.vendor; resaleAh += v.ah;
-  }
+  const demand = new Map(); // reagents this route uses (for the next pass)
+  const futureLeft = future ? new Map(future) : null;
   const timeCost = Math.max(0, Number(state.time) || 0) * 100; // silver per craft -> copper
 
+  // --- inventory: what earlier steps made; later steps use it before buying more ---------------
+  // Each lot remembers the sale credit already counted for it, so using it undoes that credit.
+  const lots = new Map(); // item id -> [{st, n, vend, ah, onAh}] (credit per unit)
+  const inv = {
+    qty: id => (lots.get(id) || []).reduce((a, l) => a + l.n, 0),
+    // what a unit is worth if kept and sold instead (the cost of using it)
+    value: id => { const l = (lots.get(id) || []).find(x => x.n > 0); return !l ? 0 : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; },
+  };
+  function takeInv(id, n, user) {
+    for (const l of lots.get(id) || []) {
+      if (n <= 0) break;
+      const k = Math.min(n, l.n); if (!k) continue;
+      l.n -= k; n -= k;
+      l.st.vendor -= k * l.vend; l.st.ah -= k * l.ah; l.st.onAh -= k * l.onAh;
+      resaleVendor -= k * l.vend; resaleAh -= k * l.ah;
+      sales.unsell(id, k, k * l.onAh);
+      l.st.kept += k;
+      if (user && user !== l.st) user.used.set(id, (user.used.get(id) || 0) + k);
+    }
+  }
+  // the output of n crafts of a step goes to the inventory, counted as sold unless a later step uses it
+  function sellOutput(st, n) {
+    if (!st.r.item || n <= 0) return;
+    const units = st.r.qty * n;
+    const v = sales.value(st.r.item, units, true);
+    st.vendor += v.vendor; st.ah += v.ah; st.onAh += v.onAh;
+    resaleVendor += v.vendor; resaleAh += v.ah;
+    (lots.get(st.r.item) || lots.set(st.r.item, []).get(st.r.item)).push({ st, n: units, vend: v.vendor / units, ah: v.ah / units, onAh: v.onAh / units });
+    if (futureLeft?.has(st.r.item)) futureLeft.set(st.r.item, Math.max(0, futureLeft.get(st.r.item) - units));
+  }
+  // An intermediate the route needs later is worth what buying it would cost (slightly less).
+  const replaceUnit = id => {
+    const c = [minPrice(BOOK0, id), ITEMS[id]?.v].filter(x => x != null);
+    return c.length ? Math.floor(Math.min(...c) * 0.9) : 0;
+  };
+
+  // --- tools -----------------------------------------------------------------------------
+  const owned = new Set();
+  const hasTool = c => toolOptions(c).some(id => owned.has(id));
+  function toolGet(ctx, c) {
+    let best = null;
+    for (const id of toolOptions(c)) {
+      const a = acquire(ctx, id, 1, 0, !!REC.tools?.items?.[id]?.bop); // bind-on-pickup tools can't come from the AH
+      if (a && (!best || a.cost < best.cost)) best = { ...a, id };
+    }
+    return best;
+  }
+  // one-time cost of the tools r needs that the route doesn't have yet; null = can't get one
+  function toolsNeeded(ctx, r) {
+    let cost = 0; const gets = [];
+    for (const c of r.tools || []) {
+      if (hasTool(c)) continue;
+      const g = toolGet(ctx, c); if (!g) return null;
+      cost += g.cost; gets.push([c, g]);
+    }
+    return { cost, gets };
+  }
+
+  // carry out an acquire() plan: take from inventory, buy from AH / vendor; returns the gold spent
+  // (items from inventory cost no gold, their lost sale credit is handled by takeInv)
+  function applyPlan(a, s, user) {
+    let invCost = 0;
+    for (const [kind, iid, qq, ic] of a.plan) {
+      if (kind === "craft") continue;
+      if (kind === "inv") { takeInv(iid, qq, user); invCost += ic || 0; continue; }
+      if (kind === "ah") consume(book, iid, qq);
+      const e = shopping.get(iid) || { id: iid, ah: 0, vendor: 0, pre: 0 };
+      e[kind] += qq; if (s < 225) e.pre += qq; // bought before Artisan (level 35)
+      shopping.set(iid, e);
+    }
+    return a.cost - invCost;
+  }
   // buy + consume reagents for n crafts of r at skill s; returns gold spent
-  function craft(r, n, s) {
+  function craft(r, n, s, st) {
     let spent = 0;
     for (let k = 0; k < n; k++) {
-      const ctx2 = { book, makers, skill: s };
+      const ctx2 = { book, makers, skill: s, inv, hasTool };
       for (const [id, q] of r.reagents) {
+        demand.set(id, (demand.get(id) || 0) + q);
         const a = acquire(ctx2, id, q);
-        if (!a) continue;
-        spent += a.cost;
-        for (const [kind, iid, qq] of a.plan) {
-          if (kind === "craft") continue;
-          if (kind === "ah") consume(book, iid, qq);
-          const e = shopping.get(iid) || { id: iid, ah: 0, vendor: 0, pre: 0 };
-          e[kind] += qq; if (s < 225) e.pre += qq; // bought before Artisan (level 35)
-          shopping.set(iid, e);
-        }
+        if (a) spent += applyPlan(a, s, st);
       }
     }
     return spent;
@@ -192,14 +288,14 @@ function plan() {
     if (!st) return;
     const need = Math.max(1, Math.round(st.exp)) - st.crafts;
     if (need > 0) {
-      const spent = craft(st.r, need, st.to - 1);
+      const spent = craft(st.r, need, st.to - 1, st);
       st.crafts += need; st.cost += spent; total += spent; sellOutput(st, need);
     }
   }
 
   const end = Math.min(300, state.to, levelCap());
   for (let s = Math.max(1, state.from); s < end; ) {
-    const ctx = { book, makers, skill: s };
+    const ctx = { book, makers, skill: s, inv, hasTool };
     let best = null, bestFast = null, cur = null;
     const prev = steps[steps.length - 1];
     for (const r of prof.recipes) {
@@ -212,6 +308,8 @@ function plan() {
         cost += a.cost; plan = plan.concat(a.plan);
       }
       if (cost == null) continue;
+      const tools = r.tools ? toolsNeeded(ctx, r) : null;
+      if (r.tools && !tools) continue; // needs a tool the route can't get yet
       // Credit for the result in the chosen selling mode. Vendor credit is capped so "almost free" crafts
       // don't win with 100 green crafts per point; AH credit is limited by what the market can absorb.
       let back = 0;
@@ -219,12 +317,19 @@ function plan() {
         const v = sales.value(r.item, r.qty, false);
         back = state.sell === "ah" && v.onAh > 0 ? v.ah : Math.min(v.vendor, cost * 0.75);
       }
+      // an intermediate later steps need is worth what buying it would cost (up to what they need)
+      const left = r.item ? futureLeft?.get(r.item) || 0 : 0;
+      if (left > 0) {
+        const u = Math.min(r.qty, left), rep = replaceUnit(r.item);
+        if (rep) back = Math.max(back, Math.min(cost, u * rep + (r.qty - u) * (back / r.qty)));
+      }
       const pat = learned.has(r.id) ? 0 : patternCost(book, r).cost;
       // cost per skill point. A profitable craft (net < 0) is scored by its profit per craft, not divided by
       // the skill-up chance, otherwise low-chance green recipes would look "better" the less they level you.
       const net = cost - back;
-      const per = ((net >= 0 ? net / c : net) + timeCost / c + pat / 5) / r.ups; // amortise a pattern over ~5 points
-      const cand = { r, per, cost, back, c, plan, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
+      const once = pat + (tools?.cost || 0); // pattern + tools: paid once, amortised over ~5 points
+      const per = ((net >= 0 ? net / c : net) + timeCost / c + once / 5) / r.ups;
+      const cand = { r, per, cost, back, c, plan, tools, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
       if (!best || per < best.per) best = cand;
       if (!cand.slow && (!bestFast || per < bestFast.per)) bestFast = cand;
       if (prev && prev.r === r) cur = cand;
@@ -248,31 +353,40 @@ function plan() {
     const { r } = best;
     if (!learned.has(r.id)) {
       const pc = patternCost(book, r); learned.set(r.id, pc);
-      if (pc.id && pc.cost) { total += pc.cost; if (minPrice(book, pc.id) === pc.cost) consume(book, pc.id, 1); }
+      if (pc.cost) { total += pc.cost; if (pc.how === "ah") consume(book, pc.id, 1); }
+    }
+    // get the tools this recipe needs (once): buy them, or craft them with this profession
+    const got = [];
+    for (const [c, g] of best.tools?.gets || []) {
+      if (hasTool(c)) continue;
+      const cash = applyPlan(g, s, null);
+      total += cash; owned.add(g.id);
+      got.push({ id: g.id, c, cost: cash, how: g.plan.find(x => x[0] !== "inv")?.[0] || "inv" });
     }
     let last = steps[steps.length - 1];
     const rankBreak = last && last.from < s && RANKS.some(k => k.cap === s); // train here: start a new step
     if (!last || last.r !== r || rankBreak) {
       settle(last);
-      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id) };
+      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id), kept: 0, used: new Map(), toolsGot: [] };
       steps.push(last);
     }
+    last.toolsGot.push(...got);
     // buy the whole crafts this step has "earned" so far, so later prices reflect what we bought
     last.exp += 1 / best.c; last.to = s + r.ups;
     const due = Math.floor(last.exp + 1e-9) - last.crafts;
     if (due > 0) {
-      const spent = craft(r, due, s);
+      const spent = craft(r, due, s, last);
       last.crafts += due; last.cost += spent; total += spent; sellOutput(last, due);
     }
     s += r.ups;
   }
   settle(steps[steps.length - 1]);
-  const sellList = [...sales.made.entries()].map(([id, made]) => {
+  const sellList = [...sales.made.entries()].filter(([, m]) => m > 0).map(([id, made]) => {
     const n = sales.sold.get(id) || 0, unit = sales.ahUnit(id), vend = ITEMS[id]?.s || 0;
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
   const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat };
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, demand };
 }
 
 // Profit / loss: positive (green, "+") when you make money, negative (red, "−") when you lose it.
@@ -301,7 +415,7 @@ function render() {
   $("#stations").innerHTML = stations.length ? stations.map(n => `<label class="chk"><input type="checkbox" data-station="${esc(n)}" ${state.stationsOff.has(n) ? "" : "checked"}> ${esc(n)}</label>`).join("") : `<span class="muted">None needed</span>`;
 
   const t0 = performance.now();
-  const p = plan();
+  const p = plan(plan().demand); // second pass knows which intermediates the route needs later
   // The answer for the chosen selling mode is the big number; the other totals sit beside it.
   const sums = {
     none: { big: `Materials${state.patterns !== "trainer" ? " + patterns" : ""} cost`, small: "Materials", val: pl(-p.total), sub: "what you spend" },
@@ -337,27 +451,36 @@ function render() {
         <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(trainerFor(prof.name, k.name))}</span></td></tr>`;
     }
     const reag = r.reagents.map(([id, q]) => `${q} × ${wh(id, ITEMS[id]?.n || id)}`).join(", ");
-    const pattern = r.source === "item" ? (st.pattern?.unknown ? "pattern: vendor/Favor/drop" : "pattern " + gold(st.pattern?.cost)) : "";
+    const pattern = r.source === "item" ? patternText(r, st.pattern) : "";
+    // tools: what this step needs, and which ones the route gets right here (first time they're needed)
+    const toolsGot = st.toolsGot.map(t => `${t.how === "craft" ? "craft" : t.how === "vendor" ? "buy (vendor)" : t.how === "ah" ? "buy (AH)" : "use"} ${wh(t.id, ITEMS[t.id]?.n || toolName(t.c))}${t.cost ? " " + gold(t.cost) : ""}`);
+    const toolsNeed = (r.tools || []).map(toolName);
+    // inventory: made here and used later / made earlier and used here
+    const used = [...st.used.entries()].map(([id, n]) => `${n} × ${esc(ITEMS[id]?.n || id)}`);
+    const kept = Math.round(st.kept);
     const name = r.item ? wh(r.item, r.name) : esc(r.name);
     const s = sellInfo(st, p);
     const ret = !s ? `<td class="num c-ret"><span class="muted">—</span></td>`
       : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
-      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="Learned from a pattern / recipe item">pattern</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}</div></td>
+      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="Learned from a pattern / recipe item">pattern</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
+        toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}</td>
       ${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;
     if (open) {
       const tags = [
-        pattern ? `<span class="tag pat">${pattern}</span>` : "",
+
         r.needs ? `<span class="tag">${esc(r.needs)}</span>` : "",
         r.isNew ? `<span class="tag new">new in Forever</span>` : "",
         r.est ? `<span class="tag">trainer skill est.</span>` : "",
       ].filter(Boolean).join(" ");
       html += `<tr class="detail"><td colspan="5"><div class="facts">
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
+        ${pattern ? `<div><span class="k">Pattern</span><span>${pattern}</span></div>` : ""}
+        ${toolsNeed.length ? `<div><span class="k">Tools</span><span>${toolsNeed.map(esc).join(", ")}</span><small>bought or made once, the first time a step needs them</small></div>` : ""}
         <div><span class="k">Crafts per point</span><span>${(st.crafts / Math.max(1, st.to - st.from)).toFixed(1)}</span><small>${st.crafts} crafts for ${st.to - st.from} points</small></div>
         ${s ? `<div class="${s.vendorBetter ? "better" : ""}"><span class="k">Vendor everything</span><span>${gold(st.vendor)}</span><small>${pl(st.vendor - st.cost)}</small></div>
         <div class="${s.ahBetter ? "better" : ""}"><span class="k">Sell on the AH (est.)</span><span>${gold(st.ah)}</span><small>${pl(st.ah - st.cost)} · ${s.note}</small></div>` : ""}

@@ -511,3 +511,11 @@ table.steps tr.train .meta { display: block; margin-top: 2px; }
 
 .pos, .pos .g, .pos .s, .pos .c { color: var(--good); }
 .neg, .neg .g, .neg .s, .neg .c { color: var(--bad); }
+
+/* leveling: tools and items carried between steps */
+.step-notes { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
+.step-notes .tag { white-space: normal; }
+.step-notes .tag a, .step-notes .tag span { display: inline; }
+.tag.toolget { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.tag.inv, .tag.keep { color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+.tag.toolget a { color: inherit; }
