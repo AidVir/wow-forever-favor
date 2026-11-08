@@ -10,6 +10,7 @@
 // Env: BLIZZARD_CLIENT_ID, BLIZZARD_CLIENT_SECRET. Optional FOREVER_BUILD (default 1.60.1.70862).
 import { writeFile } from "node:fs/promises";
 import { WRIT_ITEM_IDS } from "../data/writs.js";
+import { parseCsv, skillLineAbility, applyShift, CLASSIC_BUILD } from "./learn-levels.mjs";
 
 const BUILD = process.env.FOREVER_BUILD || "1.60.1.70862";
 const PROFS = { 186: "Mining", 171: "Alchemy", 164: "Blacksmithing", 333: "Enchanting", 202: "Engineering", 165: "Leatherworking", 197: "Tailoring", 185: "Cooking", 129: "First Aid" };
@@ -39,21 +40,6 @@ async function pool(items, n, fn) {
   return out;
 }
 
-function parseCsv(text) {
-  const rows = []; let row = [], cur = "", q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
-    else if (c === '"') q = true;
-    else if (c === ",") { row.push(cur); cur = ""; }
-    else if (c === "\n") { row.push(cur.replace(/\r$/, "")); rows.push(row); row = []; cur = ""; }
-    else cur += c;
-  }
-  if (cur || row.length) { row.push(cur); rows.push(row); }
-  const h = rows.shift();
-  return rows.map(r => Object.fromEntries(h.map((k, i) => [k, r[i]])));
-}
-
 async function main() {
   TOKEN = await token();
   console.log("downloading client SkillLineAbility", BUILD);
@@ -61,6 +47,8 @@ async function main() {
   console.log("downloading wow-classic-items");
   const wci = await (await fetch("https://raw.githubusercontent.com/nexus-devs/wow-classic-items/master/data/json/data.json")).json();
   const wciById = new Map(wci.map(i => [i.itemId, i]));
+  console.log("downloading Classic Era SkillLineAbility", CLASSIC_BUILD, "(to shift Classic trainer skills to Forever)");
+  const slaClassic = await skillLineAbility(CLASSIC_BUILD);
   const wago = async t => parseCsv(await (await fetch(`https://wago.tools/db2/${t}/csv?build=${BUILD}`)).text());
   // Recipe items from the Forever client itself: "Pattern: X", "Plans: X", ... with required profession + rank.
   console.log("downloading client ItemSparse / spell focus tables");
@@ -125,10 +113,12 @@ async function main() {
       if (item) itemIds.add(item);
       recipeItemIds.forEach(id => itemIds.add(id));
     }
-    recipes.sort((a, b) => a.learn - b.learn || a.grey - b.grey);
     professions.push({ id: Number(pid), name: pname, recipes });
     console.log(`${pname}: ${recipes.length} recipes (${heur} with estimated trainer skill)`);
   }
+
+  // Classic trainer skills -> Forever (also re-sorts each profession by learn skill)
+  console.log(`shifted the learn skill of ${applyShift({ professions }, sla, slaClassic)} trainer recipes to Forever`);
 
   WRIT_ITEM_IDS.forEach(id => itemIds.add(id));
   // Item names (Blizzard) + vendor buy price (Classic data) + vendor sell price

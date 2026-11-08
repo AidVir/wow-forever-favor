@@ -8,7 +8,9 @@ const state = {
   from: store.get("lv:from", 1),
   to: store.get("lv:to", 300),
   patterns: (v => typeof v === "string" ? v : "all")(store.get("lv:patterns", "all")),
-  time: store.get("lv:time", 0),
+  time: store.get("lv:time", 5),
+  level: store.get("lv:level", 60),
+  fast: store.get("lv:fast", true),
   sell: (v => ["ah", "vendor", "none"].includes(v) ? v : "ah")(store.get("lv:sell", "ah")),
   wait: (v => [1, 3, 7].includes(v) ? v : 3)(store.get("lv:wait", 3)),
   mining: store.get("lv:mining", false),
@@ -16,6 +18,38 @@ const state = {
   excluded: new Set(store.get("lv:excluded", [])),
 };
 let PRICES, REC, ITEMS;
+
+// --- training ranks --------------------------------------------------------------------
+// Each rank raises the skill cap; you can train it once you have the skill and character level.
+const RANKS = [
+  { name: "Journeyman", cap: 75, skill: 50, level: 10 },
+  { name: "Expert", cap: 150, skill: 125, level: 20 },
+  { name: "Artisan", cap: 225, skill: 200, level: 35 },
+];
+// Expert / Artisan trainers per profession (WoW Forever, from the wow-professions.com guides).
+// Journeyman is taught by the trainers in every capital city.
+const TRAINERS = {
+  Alchemy: { Expert: { horde: "Doctor Herbert Halsey, Undercity", alliance: "Ainethil, Darnassus" }, Artisan: { horde: "Rogvar, Stonard (Swamp of Sorrows)", alliance: "Kylanna Windwhisper, Feathermoon Stronghold (Feralas)" } },
+  Tailoring: { Expert: { horde: "Josef Gregorian, Undercity", alliance: "Georgio Bolero, Stormwind" }, Artisan: { horde: "Daryl Stack, Tarren Mill (Hillsbrad Foothills)", alliance: "Timothy Worthington, Theramore Isle (Dustwallow Marsh)" } },
+  Blacksmithing: { Expert: { horde: "Saru Steelfury, Orgrimmar", alliance: "Bengus Deepforge, Ironforge" }, Artisan: { both: "Brikk Keencraft, Booty Bay (Stranglethorn Vale)" } },
+  Leatherworking: { Expert: { horde: "Una, Thunder Bluff", alliance: "Telonis, Darnassus" }, Artisan: { horde: "Hahrana Ironhide, Camp Mojache (Feralas)", alliance: "Drakk Stonehand, Aerie Peak (The Hinterlands)" } },
+  Enchanting: { Expert: { horde: "Hgarth, Sun Rock Retreat (Stonetalon Mountains)", alliance: "Kitta Firewind, Tower of Azora (Elwynn Forest)" }, Artisan: { both: "Annora, inside Uldaman (Badlands); bring a group" } },
+  Engineering: { Expert: { horde: "Roxxik, Orgrimmar", alliance: "Springspindle Fizzlegear, Ironforge" }, Artisan: { both: "Buzzek Bracketswing, Gadgetzan (Tanaris)" } },
+};
+function trainerFor(prof, rank) {
+  if (rank === "Journeyman") return "any capital-city trainer";
+  const t = TRAINERS[prof]?.[rank];
+  return t ? (t.both || t[state.faction]) : "trainer not confirmed for Forever yet";
+}
+// Highest skill this character can reach: each rank needs a character level.
+function levelCap() {
+  const trained = RANKS.filter(k => state.level >= k.level).length; // ranks are in level order
+  return [75, 150, 225, 300][trained];
+}
+// Recipes needing more crafts than this per skill point are skipped while a faster one exists.
+const MAX_CRAFTS_PER_POINT = 3;
+// Stay on the current recipe unless another one is clearly cheaper (fewer, longer steps).
+const STICK = 0.10, STICK_MIN = 50; // 10%, at least 50 copper per point
 
 const chance = (r, s) => s < r.yellow ? 1 : s >= r.grey ? 0 : (r.grey - s) / (r.grey - r.yellow);
 const color = (r, s) => s < r.yellow ? "orange" : s < r.green ? "yellow" : s < r.grey ? "green" : "grey";
@@ -145,8 +179,9 @@ function plan() {
         for (const [kind, iid, qq] of a.plan) {
           if (kind === "craft") continue;
           if (kind === "ah") consume(book, iid, qq);
-          const e = shopping.get(iid) || { id: iid, ah: 0, vendor: 0 };
-          e[kind] += qq; shopping.set(iid, e);
+          const e = shopping.get(iid) || { id: iid, ah: 0, vendor: 0, pre: 0 };
+          e[kind] += qq; if (s < 225) e.pre += qq; // bought before Artisan (level 35)
+          shopping.set(iid, e);
         }
       }
     }
@@ -162,9 +197,11 @@ function plan() {
     }
   }
 
-  for (let s = Math.max(1, state.from); s < Math.min(300, state.to); ) {
+  const end = Math.min(300, state.to, levelCap());
+  for (let s = Math.max(1, state.from); s < end; ) {
     const ctx = { book, makers, skill: s };
-    let best = null;
+    let best = null, bestFast = null, cur = null;
+    const prev = steps[steps.length - 1];
     for (const r of prof.recipes) {
       if (r.learn > s || s >= r.grey || !allowed(r)) continue;
       const c = chance(r, s); if (c <= 0) continue;
@@ -187,8 +224,17 @@ function plan() {
       // the skill-up chance, otherwise low-chance green recipes would look "better" the less they level you.
       const net = cost - back;
       const per = ((net >= 0 ? net / c : net) + timeCost / c + pat / 5) / r.ups; // amortise a pattern over ~5 points
-      if (!best || per < best.per) best = { r, per, cost, back, c, plan };
+      const cand = { r, per, cost, back, c, plan, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
+      if (!best || per < best.per) best = cand;
+      if (!cand.slow && (!bestFast || per < bestFast.per)) bestFast = cand;
+      if (prev && prev.r === r) cur = cand;
     }
+    // Skip recipes that need more than MAX_CRAFTS_PER_POINT crafts per point while a faster one exists.
+    if (state.fast && bestFast) best = bestFast;
+    // Keep crafting the current recipe unless the best one is clearly cheaper, so the route doesn't
+    // switch back and forth for a few copper.
+    if (best && cur && cur !== best && !(state.fast && cur.slow && bestFast)
+      && cur.per <= best.per + Math.max(Math.abs(best.per) * STICK, STICK_MIN)) best = cur;
     if (!best) {
       // which reagents ran out?
       const miss = new Map();
@@ -205,7 +251,8 @@ function plan() {
       if (pc.id && pc.cost) { total += pc.cost; if (minPrice(book, pc.id) === pc.cost) consume(book, pc.id, 1); }
     }
     let last = steps[steps.length - 1];
-    if (!last || last.r !== r) {
+    const rankBreak = last && last.from < s && RANKS.some(k => k.cap === s); // train here: start a new step
+    if (!last || last.r !== r || rankBreak) {
       settle(last);
       last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id) };
       steps.push(last);
@@ -224,7 +271,8 @@ function plan() {
     const n = sales.sold.get(id) || 0, unit = sales.ahUnit(id), vend = ITEMS[id]?.s || 0;
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, book, sellList, salesInfo: sales.info, stat: sales.stat };
+  const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat };
 }
 
 // Profit / loss: positive (green, "+") when you make money, negative (red, "−") when you lose it.
@@ -267,23 +315,34 @@ function render() {
     <div class="sum-stats">
       ${rest.map(x => `<div><span class="eyebrow">${x.small}</span><b>${x.val}</b><small>${x.sub}</small></div>`).join("")}
       <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
-      <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : state.to}</b></div>
+      <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : p.capped ?? state.to}</b></div>
     </div>`;
-  $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>` : "";
+  const nextRank = p.capped ? RANKS.find(k => k.cap === p.capped) : null;
+  $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>`
+    : nextRank ? `<p class="warn">Stops at ${p.capped}: ${nextRank.name} ${esc(prof.name)} needs character level ${nextRank.level} (you set ${state.level}). Change "Character level" under More options to plan further.</p>` : "";
 
   // Steps: the row shows what to craft, its reagents, cost and what you get back in the chosen mode.
   // Skill colours, the other selling mode, sales notes and recipe tags live in the expandable detail row.
   const retVendor = state.sell === "vendor";
   $("#retHead").textContent = retVendor ? "Vendor value" : "AH value (est.)";
+  const trained = new Set();
   $("#steps").innerHTML = p.steps.map(st => {
     const r = st.r, key = `${r.id}@${st.from}`, open = OPEN_STEPS.has(key);
+    // "Train the next rank" row before the first step past each rank cap
+    let train = "";
+    for (const k of RANKS) {
+      if (trained.has(k.name) || st.from < k.cap || state.from >= k.cap) continue;
+      trained.add(k.name);
+      train += `<tr class="train"><td class="num rng">${k.cap}</td><td class="c-craft" colspan="4"><b>Train ${k.name} ${esc(prof.name)}</b> before skill ${k.cap}
+        <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(trainerFor(prof.name, k.name))}</span></td></tr>`;
+    }
     const reag = r.reagents.map(([id, q]) => `${q} × ${wh(id, ITEMS[id]?.n || id)}`).join(", ");
     const pattern = r.source === "item" ? (st.pattern?.unknown ? "pattern: vendor/Favor/drop" : "pattern " + gold(st.pattern?.cost)) : "";
     const name = r.item ? wh(r.item, r.name) : esc(r.name);
     const s = sellInfo(st, p);
     const ret = !s ? `<td class="num c-ret"><span class="muted">—</span></td>`
       : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
-    let html = `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
+    let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="Learned from a pattern / recipe item">pattern</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}</div></td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}</td>
@@ -299,6 +358,7 @@ function render() {
       ].filter(Boolean).join(" ");
       html += `<tr class="detail"><td colspan="5"><div class="facts">
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
+        <div><span class="k">Crafts per point</span><span>${(st.crafts / Math.max(1, st.to - st.from)).toFixed(1)}</span><small>${st.crafts} crafts for ${st.to - st.from} points</small></div>
         ${s ? `<div class="${s.vendorBetter ? "better" : ""}"><span class="k">Vendor everything</span><span>${gold(st.vendor)}</span><small>${pl(st.vendor - st.cost)}</small></div>
         <div class="${s.ahBetter ? "better" : ""}"><span class="k">Sell on the AH (est.)</span><span>${gold(st.ah)}</span><small>${pl(st.ah - st.cost)} · ${s.note}</small></div>` : ""}
         ${tags ? `<div><span class="k">Recipe</span><span>${tags}</span></div>` : ""}
@@ -324,7 +384,9 @@ function render() {
     : `<tr><td colspan="7" class="empty">This route makes nothing that can be sold.</td></tr>`;
 
   const shop = p.shopping.filter(e => e.ah || e.vendor).sort((a, b) => (b.ah + b.vendor) - (a.ah + a.vendor));
-  $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td>
+  // Artisan (past 225) needs level 35, so say how much of each item is needed before that.
+  const split = state.from < 225 && p.steps.some(st => st.to > 225);
+  $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}${split ? `<small>${e.pre === e.ah + e.vendor ? "all before skill 225" : e.pre ? `${e.pre.toLocaleString("en-GB")} before skill 225` : "only after 225"}</small>` : ""}</td>
       <td class="num">${e.ah ? e.ah.toLocaleString("en-GB") : ""}</td><td class="num">${e.vendor ? e.vendor.toLocaleString("en-GB") : ""}</td>
       <td class="num">${e.ah ? `${listed(makeBook(PRICES, state.faction, state.neutral), e.id).toLocaleString("en-GB")} listed` : `vendor ${gold(ITEMS[e.id]?.v)}`}</td></tr>`).join("");
   $("#excl").innerHTML = state.excluded.size ? `Excluded: ${[...state.excluded].map(id => { const r = prof.recipes.find(x => x.id === id); return r ? `<button class="chip" data-unex="${id}">${esc(r.name)} ✕</button>` : ""; }).join(" ")}` : "";
@@ -340,6 +402,8 @@ function bind() {
   $("#to").oninput = e => set("to", Math.max(2, Math.min(300, Number(e.target.value) || 300)));
   $("#patterns").onchange = e => set("patterns", e.target.value);
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
+  $("#level").oninput = e => set("level", Math.max(1, Math.min(60, Number(e.target.value) || 60)));
+  $("#fast").onchange = e => set("fast", e.target.checked);
   $("#sellmode").onchange = e => set("sell", e.target.value);
   $("#wait").onchange = e => set("wait", Number(e.target.value));
   $("#mining").onchange = e => set("mining", e.target.checked);
@@ -368,7 +432,7 @@ async function load() {
     $("#prof").innerHTML = REC.professions.filter(p => p.name !== "Mining").map(p => `<option ${p.name === state.prof ? "selected" : ""}>${p.name}</option>`).join("");
     if (!REC.professions.some(p => p.name === state.prof)) state.prof = REC.professions[0].name;
     $("#from").value = state.from; $("#to").value = state.to;
-    $("#patterns").value = state.patterns; $("#time").value = state.time; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
+    $("#patterns").value = state.patterns; $("#time").value = state.time; $("#level").value = state.level; $("#fast").checked = state.fast; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
     $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b> · recipes from client build ${esc(REC.build)}`;
     bind(); render();
   } catch (e) {

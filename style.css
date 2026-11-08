@@ -366,6 +366,11 @@ td.rng { font-weight: 700; color: var(--muted); font-size: 13.5px; }
 table.steps td { vertical-align: top; }
 table.steps tr.row > td { padding-top: 13px; padding-bottom: 13px; }
 table.steps td.c-craft { width: 100%; }
+/* "Train the next rank" checkpoint rows */
+table.steps tr.train > td { background: var(--accent-soft); padding-top: 10px; padding-bottom: 10px; }
+table.steps tr.train:hover > td { background: var(--accent-soft); }
+table.steps tr.train td.rng { color: var(--accent); }
+table.steps tr.train .meta { display: block; margin-top: 2px; }
 .x { border: 1px solid transparent; background: none; color: var(--faint); cursor: pointer; font-size: 13px; width: 30px; height: 30px; border-radius: 8px; }
 .x:hover, .x:focus-visible { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 25%, transparent); }
 .profit { color: var(--good); font-weight: 700; }
@@ -491,6 +496,7 @@ table.steps td.c-craft { width: 100%; }
   table.steps .c-x { grid-area: x; text-align: right; margin-top: -4px; }
   table.steps .c-cost small, table.steps .c-ret small { display: block; margin-left: 0; }
   table.steps tr.detail > td { padding-left: 58px !important; }
+  table.steps tr.train { grid-template-columns: 58px 1fr; grid-template-areas: "rng craft"; background: var(--accent-soft); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
 }
 @media (max-width: 420px) {
   .seg button { padding: 5px 10px; }

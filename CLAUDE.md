@@ -111,7 +111,18 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - vendor,
   - AH (listings are consumed from the order book as they are bought),
   - crafting the intermediate yourself, up to 2 levels deep.
-- **Pattern cost** is spread over about 5 skill points. An optional time cost is added per craft.
+- **Pattern cost** is spread over about 5 skill points. A time cost per craft is added (default 5s).
+- **Route shape rules** (constants near the top of `leveling.js`):
+  - `STICK` / `STICK_MIN`: stay on the current recipe unless the best one is >10% (≥50c/point) cheaper.
+  - `MAX_CRAFTS_PER_POINT` (3): with "Avoid recipes needing over 3 crafts per point" on, slower
+    recipes are skipped while a faster one exists.
+- **Training ranks:** `RANKS` (75/150/225 caps, skill 50/125/200, level 10/20/35). Steps break at each
+  cap, a "Train X" row is shown with `TRAINERS` (Forever Expert/Artisan trainers per faction), and
+  "Character level" ends the route at the last rank that level can train. The shopping list says how
+  much is needed before 225 (Artisan needs level 35).
+- **Learn skill:** trainer recipes use Classic's learn skill shifted by how far Forever moved the
+  yellow threshold (`scripts/learn-levels.mjs`, also used by `build-recipes.mjs`). Run
+  `node scripts/learn-levels.mjs` to re-apply it to `recipes.json` without Blizzard credentials.
 - **Resale of crafted items:** `saleModel()`.
   - **With 6+ hours of sales history:** sell up to `perDay × waitDays × 50%` on the AH. The price is
     the lower of the cheapest listing and the average sold price, times 0.95 (the AH cut).

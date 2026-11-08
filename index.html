@@ -53,8 +53,9 @@
       </div>
     </div>
     <details class="more" open>
-      <summary>More options <small>recipes · selling time · smelting · stations</small></summary>
+      <summary>More options <small>level · recipes · selling time · smelting · stations</small></summary>
       <div class="controls">
+        <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60" aria-describedby="time-help"></div>
         <div class="ctl">
           <label for="patterns">Recipes I can use</label>
           <select id="patterns">
@@ -71,7 +72,11 @@
             <option value="7">7 days</option>
           </select>
         </div>
-        <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="0" aria-describedby="time-help"></div>
+        <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="5" aria-describedby="time-help"></div>
+        <div class="ctl">
+          <span class="lbl">Route</span>
+          <label class="chk"><input id="fast" type="checkbox" checked> Avoid recipes needing over 3 crafts per point</label>
+        </div>
         <div class="ctl">
           <span class="lbl">Materials</span>
           <label class="chk"><input id="mining" type="checkbox"> I can smelt bars (Mining)</label>
@@ -79,7 +84,7 @@
         </div>
         <fieldset class="ctl profs"><legend>Crafting stations I can use</legend><div id="stations" class="stations"></div></fieldset>
       </div>
-      <p class="hint" id="time-help">Time value adds a cost to every craft, so the route prefers fewer crafts. Time to sell is how long you'll keep relisting crafts on the AH.</p>
+      <p class="hint" id="time-help">Character level decides how far you can train: Journeyman (past 75) needs level 10, Expert (past 150) level 20, Artisan (past 225) level 35. Time value adds a cost to every craft, so the route prefers fewer crafts. Time to sell is how long you'll keep relisting crafts on the AH.</p>
     </details>
   </section>
 
@@ -117,13 +122,15 @@
   <details class="explain">
     <summary>How the route is chosen</summary>
     <p>Each skill point uses the recipe with the lowest expected cost per point right now. Orange always gives a point; yellow and green give one with chance (grey − skill) ÷ (grey − yellow). Each step's details show its thresholds as <span class="o">yellow</span> <span class="y">green</span> <span class="gr">grey</span>.</p>
+    <p>Three rules keep the route practical, like a written guide. It stays on the current recipe unless another one is more than 10% cheaper, so it doesn't switch back and forth for a few copper. With "Avoid recipes needing over 3 crafts per point" ticked, it skips slow green recipes whenever a faster one exists. And every craft costs the time value you set (5 silver by default), so it prefers fewer crafts.</p>
+    <p>The route stops at each rank cap (75, 150, 225) and shows where to train the next rank. Journeyman needs character level 10, Expert level 20, Artisan level 35, so a lower "Character level" ends the route at the last rank you can train.</p>
     <p>Reagents come from vendors when cheaper, otherwise from the cheapest auction listings still left, or are crafted yourself (bolts, bars, leather…) when that is cheaper. Click ✕ on a step to drop a recipe you don't want; the route is re-planned without it.</p>
     <p>Trainer fees are not included (recipes cost a few silver each; rank training is roughly 5s at 50, 50s at 125 and 5g at 200).</p>
     <h3>How AH sales are estimated</h3>
     <p>Blizzard's API lists auctions but never says what sold. Every hour the price job compares the new snapshot with the previous one: a listing with 2+ hours left that is gone an hour later can't have expired, so it was bought (or cancelled by its seller, which this can't tell apart). That gives units sold per day for each item.</p>
     <p>The plan only puts on the AH what you could sell at half of that daily demand over the time you pick, priced at the lower of the cheapest listing now and the average price items actually sold at, minus the 5% cut. The rest is vendored. Deposits and undercutting wars are not included, so the AH total is still an estimate; the vendor total is guaranteed.</p>
     <h3>About the data</h3>
-    <p>Recipes, reagents and skill-up colours come from the live WoW Forever client (via the Blizzard Game Data API and wago.tools client tables), so Forever's own changes are included — for example sharpening stones turn grey much earlier than in Classic. Trainer skill requirements and vendor prices come from Classic data where Forever didn't change them. Forever turned many recipes into patterns (many bought with Merchant's Favor from the faction camp vendors); pattern steps are tagged, with the auction house price when one is listed. Some recipes need crafting stations such as an Anvil, Forge, Tanning Rack or Sewing Machine.</p>
+    <p>Recipes, reagents and skill-up colours come from the live WoW Forever client (via the Blizzard Game Data API and wago.tools client tables), so Forever's own changes are included — for example sharpening stones turn grey much earlier than in Classic. The client doesn't say at which skill a trainer teaches a recipe, so that comes from Classic, lowered by as much as Forever moved the recipe's colours (Forever teaches many Tailoring, Blacksmithing and Leatherworking recipes 20–30 points earlier). Vendor prices come from Classic data. Forever turned many recipes into patterns (many bought with Merchant's Favor from the faction camp vendors); pattern steps are tagged, with the auction house price when one is listed. Some recipes need crafting stations such as an Anvil, Forge, Tanning Rack or Sewing Machine.</p>
     <p class="fine" id="perf"></p>
   </details>
 </main>
