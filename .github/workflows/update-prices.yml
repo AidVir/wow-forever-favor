@@ -1,0 +1,40 @@
+name: Update AH prices
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # every hour
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["scripts/**", "data/crates.js", "data/houses.json", ".github/workflows/update-prices.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch EU PvP auction data
+        env:
+          BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+          BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+        run: node scripts/fetch-prices.mjs
+      - name: Commit prices
+        run: |
+          git config user.name "price-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json data/crate-ids.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Update AH prices $(date -u +'%Y-%m-%d %H:%M')"
+          git pull --rebase
+          git push
