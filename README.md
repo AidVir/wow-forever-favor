@@ -43,7 +43,11 @@ vendor prices). Re-run it after a game patch. Faction → auction house mapping 
 2. Add repo secrets `BLIZZARD_CLIENT_ID` and `BLIZZARD_CLIENT_SECRET`.
 3. Run the "Update AH prices" workflow once (Actions tab).
 
-Local run: `BLIZZARD_CLIENT_ID=... BLIZZARD_CLIENT_SECRET=... node scripts/fetch-prices.mjs`
+Preview the site locally: double-click `serve.cmd` (or `node scripts/serve.mjs`) and open
+http://localhost:5178/. Nothing is cached, so a reload shows your edits right away; prices and sales come
+live from GitHub (`--local-data` uses the files in `data/`).
+
+Fetch prices locally: `BLIZZARD_CLIENT_ID=... BLIZZARD_CLIENT_SECRET=... node scripts/fetch-prices.mjs`
 (`PROBE=1` prints the auction house index).
 
 Not affiliated with Blizzard Entertainment.

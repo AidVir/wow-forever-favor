@@ -14,7 +14,7 @@ on:
         default: "330"
   push:
     branches: [main]
-    paths: ["scripts/**", "data/crates.js", "data/writs.js", "data/recipes.json", "data/houses.json", ".github/workflows/update-prices.yml"]
+    paths: ["scripts/**", "!scripts/serve.mjs", "data/crates.js", "data/writs.js", "data/recipes.json", "data/houses.json", ".github/workflows/update-prices.yml"]
 
 permissions:
   contents: write
