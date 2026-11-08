@@ -2,7 +2,7 @@ name: Update AH prices
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # check every 10 min; the script only downloads when Blizzard has a new snapshot
+    - cron: "3,13,23,33,43,53 * * * *"   # every 10 min, off the busy :00 mark; the script only downloads when Blizzard has a new snapshot
   workflow_dispatch:
   push:
     branches: [main]
