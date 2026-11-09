@@ -147,8 +147,9 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   the step's recipe (same as ✕).
 - **Pattern sources:** `recipe.src` = `{k:"vendor", npc, cost, faction}` | `{k:"quest", quest}` |
   `{k:"drop", from}` | `{k:"new"}` (Forever-only, not in Classic data), from wow-classic-items.
-  "Recipes I can use": `all` (every pattern, unknown ones free), `buyable` (default: AH / vendor /
-  quest), `vendor` (vendor + quest, no drops), `trainer`. `scripts/client-extras.mjs` writes `tools`
+  "Recipes I can use" (listed first = default): `buyable` (AH / vendor / quest), `vendor`, `trainer`,
+  `all` (every pattern owned, unknown ones free; an old saved `all` is moved to `buyable` once via
+  `lv:patternsV2` / `mm:patternsV2`); `vendor` = vendor + quest patterns, no drops. `scripts/client-extras.mjs` writes `tools`
   and `src` without Blizzard credentials (`node scripts/client-extras.mjs`); `build-recipes.mjs` runs it too.
 - **Learn skill:** trainer recipes use Classic's learn skill shifted by how far Forever moved the
   yellow threshold (`scripts/learn-levels.mjs`, also used by `build-recipes.mjs`). Run

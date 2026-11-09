@@ -7,7 +7,8 @@ const state = {
   prof: store.get("lv:prof", "Alchemy"),
   from: store.get("lv:from", 1),
   to: store.get("lv:to", 300),
-  patterns: (v => ["all", "buyable", "vendor", "trainer"].includes(v) ? v : "buyable")(store.get("lv:patterns", "buyable")),
+  // "all" used to be the default; nobody owns every pattern, so old saved "all" choices move to "buyable" once
+  patterns: (v => ["all", "buyable", "vendor", "trainer"].includes(v) && !(v === "all" && !store.get("lv:patternsV2", false)) ? v : "buyable")(store.get("lv:patterns", "buyable")),
   time: store.get("lv:time", 5),
   level: store.get("lv:level", 60),
   fast: store.get("lv:fast", true),
@@ -587,7 +588,7 @@ function bind() {
   sel.onchange = () => set("prof", sel.value);
   $("#from").oninput = e => set("from", Math.max(1, Math.min(299, Number(e.target.value) || 1)));
   $("#to").oninput = e => set("to", Math.max(2, Math.min(300, Number(e.target.value) || 300)));
-  $("#patterns").onchange = e => set("patterns", e.target.value);
+  $("#patterns").onchange = e => { store.set("lv:patternsV2", true); set("patterns", e.target.value); };
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
   $("#level").oninput = e => set("level", Math.max(1, Math.min(60, Number(e.target.value) || 60)));
   $("#fast").onchange = e => set("fast", e.target.checked);

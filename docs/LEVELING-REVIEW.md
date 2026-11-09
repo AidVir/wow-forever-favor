@@ -165,7 +165,35 @@ shop for.
 | 7 | **Recipe source data.** Add source details for vendor recipes (NPC, zone, price, BoP), Favor recipes (Favor cost, so the route can say "costs 15 Favor") and quest recipes (Imperial Plate chain). Add a "Recipes I can use" option for "trainer + vendor + Favor (no world drops)". | Finding 7 | M | Done for Classic sources (vendor NPC + price, quest, drop) plus a vendor & quest option; Merchant's Favor recipes still unknown (in no data we have) |
 | 8 | **Alternatives per step.** Store the runner-up recipe for each step and show "Alternative: X (+Y g)" in the details, like the guides' "if Silverleaf is cheaper" notes. | Usability; also helps when the AH runs out mid-route | S | Done: runner-up per step in its details, cost difference over the step, "Use it instead" button |
 | 9 | **Owned materials and sharing**, as Metabot does: tick reagents you already have (treated as free) and copy a link with the plan settings. This overlaps with idea #1 in `docs/IDEAS.md`. | Usability | S–M | Open |
-| 10 | **Spot-check against guides after each patch.** Keep a small JSON of "guide checkpoints" (recipe usable at skill X) and have `build-recipes.mjs` warn when our data disagrees. | Keeps finding 1 from coming back | S | Open |
+| 10 | **Spot-check against guides after each patch.** Keep a small JSON of "guide checkpoints" (recipe usable at skill X) and have `build-recipes.mjs` warn when our data disagrees. | Keeps finding 1 from coming back | S | Partly: `docs/guide-routes.json` holds the guides' routes; price them against the planner as in the table below |
 
 **Suggested order:** do 1, 2, 4 and 5 first. They're small and fix most of what makes our routes look
 wrong next to a guide. Then 3 and 7. Then 6, the biggest algorithm change.
+
+## Vendor routes priced against the guides (2026-11-09)
+
+The guides' routes ([docs/guide-routes.json](guide-routes.json)) were priced with the same live
+Horde AH prices as the planner. Reagents come from earlier steps first, then the cheaper of
+vendor and AH (walking the order book), and are crafted when neither has them. Whatever is left at
+the end is vendored. The planner ran in vendor mode with trainer + vendor/quest patterns and the
+default 5s time value per craft. Net = materials − vendor sales; crafts include missed skill-ups.
+
+| Profession | 1–75 guide / ours | 75–150 guide / ours | 150–225 guide / ours | 1–225 net guide / ours |
+|---|---|---|---|---|
+| Alchemy | 0.77g, 91 / 0.38g, 75 | 1.64g, 87 / 1.23g, 77 | **2.87g, 87** / 3.18g, 81 | 4.6g / 4.7g |
+| Tailoring | 1.12g, 103 / 0.19g, 74 | 10.79g, 178 / 3.90g, 87 | 75.57g, 110 / 32.85g, 91 | 79.0g / 37.2g |
+| Blacksmithing | 1.21g, 104 / 0.37g, 90 | 14.22g, 124 / 3.46g, 83 | 48.16g, 114 / 19.98g, 86 | 54.5g / 24.0g |
+| Leatherworking | 0.20g, 88 / 0.20g, 74 | 5.28g, 110 / 1.37g, 77 | 6.37g, 102 / 2.95g, 80 | 8.8g / 5.1g |
+| Engineering | 0.72g, 121 / 0.60g, 74 | 1.90g, 165 / 0.05g, 79 | 9.99g, 134 / 2.63g, 99 | 11.0g / 3.2g |
+| Enchanting | 0.93g, 99 / 0.17g, 74 | 1.94g, 92 / 1.56g, 84 | 6.49g, 95 / 5.92g, 87 | 8.9g / 7.2g |
+
+**Findings:**
+- At today's prices the planner beats the guides in 17 of 18 brackets, with fewer crafts.
+- The exception is Alchemy 150–225. There the guide is 0.3g cheaper but takes 6 more crafts: the
+  5s time value buys the shorter route. With time value 0 the planner takes the cheaper one.
+- In vendor mode "useless" crafts are fine and are picked whenever they're the cheapest skill-up after
+  vendor sales: Rough Sharpening Stones, bolts, blasting powder, Light Armor Kits.
+- The guides' fixed routes cost more mainly because they don't follow prices. For example, Tailoring's
+  guide makes all Woolen, Silk and Mageweave bolts from cloth whatever the cloth costs.
+- Caveat: this compares cost at one moment. The guides' choices are robust picks that are rarely bad,
+  while the planner's picks depend on current listings.

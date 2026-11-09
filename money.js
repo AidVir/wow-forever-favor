@@ -41,7 +41,8 @@ const state = {
   minMargin: num(store.get("mm:minMargin", 5), 5),
   time: num(store.get("mm:time", 0), 0),
   minSales: num(store.get("mm:minSales", 5), 5),
-  patterns: (v => ["all", "buyable", "trainer"].includes(v) ? v : "all")(store.get("mm:patterns", "all")),
+  // "all" used to be the default; old saved "all" choices move to "buyable" once
+  patterns: (v => ["all", "buyable", "trainer"].includes(v) && !(v === "all" && !store.get("mm:patternsV2", false)) ? v : "buyable")(store.get("mm:patterns", "buyable")),
   sort: (v => ["daily", "craft", "margin"].includes(v) ? v : "daily")(store.get("mm:sort", "daily")),
   ownMode: (v => ["market", "free"].includes(v) ? v : "market")(store.get("mm:ownMode", "market")),
   own: new Set(store.get("mm:own", [])),
@@ -315,7 +316,7 @@ function bind() {
   $("#minmargin").oninput = e => set("minMargin", Math.max(0, Number(e.target.value) || 0));
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
   $("#minsales").oninput = e => set("minSales", Math.max(0, Number(e.target.value) || 0));
-  $("#patterns").onchange = e => set("patterns", e.target.value);
+  $("#patterns").onchange = e => { store.set("mm:patternsV2", true); set("patterns", e.target.value); };
   $("#sort").onchange = e => set("sort", e.target.value);
   $("#ownmode").onchange = e => set("ownMode", e.target.value);
   $("#neutral").onchange = e => set("neutral", e.target.checked, "neutral");
