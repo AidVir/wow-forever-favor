@@ -1,4 +1,4 @@
-import { $, store, esc, gold, makeBook, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, acquire, salesStats } from "./common.js";
+import { $, store, esc, gold, makeBook, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, acquire, salesStats, marketTrend, projectPrice } from "./common.js";
 
 // --- rules (explained on the page under "How this is calculated") -------------------------
 const AH_CUT = 0.95;          // the AH keeps 5% of the sale price
@@ -9,6 +9,9 @@ const CROWD_DAYS = 2;         // above this many days of supply your share shrin
 const OVER_DAYS = 3;          // above this many days of supply the market is flagged oversupplied
 const THIN = 1.15;            // a day's reagents costing 15%+ more than the top listings = thin reagent market
 const SPIKE = 1.5;            // recent price 50%+ above the earlier average = possible manipulation
+const SELL_DAYS = 1;          // a day's crafts sell over about a day: falling prices are projected this far
+const FALLING = -0.05;        // price falling 5%+ a day = flagged
+const SUPPLY_UP = 0.5;        // 50%+ more units listed than 24 h ago = flagged (competition piling up)
 const VENDOR_CRAFTS = 20;     // crafts/day assumed when the vendor is the buyer (no demand limit)
 const MAX_DEPTH = 200;        // never walk the order book for more than this many crafts
 const SHOW_MAX = 200;         // rows rendered
@@ -76,24 +79,10 @@ function usable(r, profs, book) {
   return null;
 }
 
-// Price trend of an item: the hourly cheapest-listing history in prices.json when the bot keeps one
-// (crate items), otherwise the average sold price of the last 6 h against the hours before.
-function trend(id) {
-  const h = PRICES.history?.[state.faction]?.[id];
-  if (h && h.length >= 4) {
-    const prev = h.slice(-25, -1), base = prev.reduce((a, x) => a + x[1], 0) / prev.length;
-    return { pct: h[h.length - 1][1] / base - 1, src: "cheapest listing vs its recent average" };
-  }
-  const rows = SALES?.factions?.[state.faction]?.items?.[id];
-  if (!rows?.length) return null;
-  const now = Date.parse(SALES.updated || new Date().toISOString());
-  let ru = 0, rv = 0, eu = 0, ev = 0;
-  for (const [hr, n, v] of rows) {
-    if (now - Date.parse(hr + ":00:00Z") < 6 * 3.6e6) { ru += n; rv += v; } else { eu += n; ev += v; }
-  }
-  if (ru < 3 || eu < 3) return null;
-  return { pct: (rv / ru) / (ev / eu) - 1, src: "average sold price, last 6 h vs earlier" };
-}
+// Price trend of an item: the bot's market history (data/trends.json: robust price 24 h / 72 h ago and
+// units listed), falling back to the average sold price of the last 6 h against the hours before.
+let TRENDS = null;
+const trend = id => marketTrend(TRENDS, SALES, state.faction, id);
 const arrow = t => !t || Math.abs(t.pct) < 0.1 ? ""
   : `<span class="mm-trend ${t.pct > 0 ? "up" : "down"}" title="${esc(t.src)}: ${t.pct > 0 ? "+" : ""}${Math.round(t.pct * 100)}%">${t.pct > 0 ? "▲" : "▼"}${Math.abs(Math.round(t.pct * 100))}%</span>`;
 
@@ -114,7 +103,9 @@ function evaluate(r, env) {
   const minList = minPrice(env.sellBook, id), nListed = listed(env.sellBook, id), levels = env.sellBook[id]?.length || 0;
   const vend = it.s > 0 ? it.s : null;
   if (minList == null && st.avg == null && !vend) return { r, skip: "nomarket" };
-  const gross = minList != null && st.avg != null ? Math.min(minList, st.avg) : (minList ?? st.avg);
+  const tr = trend(id);
+  const today = minList != null && st.avg != null ? Math.min(minList, st.avg) : (minList ?? st.avg);
+  const gross = projectPrice(today, tr, SELL_DAYS); // falling prices keep falling while you sell
   const guess = !env.sales.ok;
   const perDay = guess ? nListed * GUESS_ABSORB : st.perDay;
   const supplyDays = guess ? null : perDay > 0 ? nListed / perDay : nListed > 0 ? Infinity : 0;
@@ -140,7 +131,6 @@ function evaluate(r, env) {
   const profit = sellUnit * r.qty - cost - env.timeCost;
   const margin = cost > 0 ? profit / cost : profit > 0 ? Infinity : 0;
   const daily = profit * crafts;
-  const tr = trend(id);
   const pat = patternCost(env.book, r);
 
   const flags = [];
@@ -151,12 +141,14 @@ function evaluate(r, env) {
     if (tr && tr.pct > SPIKE - 1) flags.push(["price spike", "risk", `Price is up ${Math.round(tr.pct * 100)}% (${tr.src}), possibly manipulated`]);
     else if (minList != null && st.avg != null && st.units >= 3 && minList > st.avg * SPIKE) flags.push(["listed high", "info", "Listings sit well above what it actually sold for; priced at the sold average"]);
     if (over) flags.push(["oversupplied", "warn", `${supplyDays === Infinity ? "Nothing sold" : rate(supplyDays) + " days of supply"} on the AH`]);
+    if (tr && tr.perDay <= FALLING) flags.push(["price falling", "warn", `Down about ${Math.round(-tr.perDay * 100)}% a day (${tr.src}); priced for selling over the next day`]);
+    if (tr?.supply != null && tr.supply >= SUPPLY_UP) flags.push(["supply rising", "warn", `${Math.round(tr.supply * 100)}% more listed than 24 h ago: others are making it too`]);
   } else if (gross != null) flags.push(["vendor it", "info", "The AH pays less than the vendor after the cut and deposit"]);
   if (deep.cost / n > top.cost * THIN && deep.cost / n - top.cost > 100) flags.push(["thin reagents", "warn", `A day's reagents cost ${Math.round((deep.cost / n / top.cost - 1) * 100)}% more than the cheapest listings`]);
   if (supplyCap != null) flags.push(["reagent supply", "warn", `The AH only has reagents for ${supplyCap} craft${supplyCap === 1 ? "" : "s"} right now`]);
   const risky = flags.some(f => f[1] === "risk");
 
-  return { r, id, it, st, minList, nListed, levels, vend, gross, guess, perDay, supplyDays, over, deposit, ahNet, toVendor, sellUnit, share,
+  return { r, id, it, st, minList, nListed, levels, vend, gross, today, guess, perDay, supplyDays, over, deposit, ahNet, toVendor, sellUnit, share,
     crafts, n, top, deep, cost, profit, margin, daily, tr, pat, flags, risky, supplyCap };
 }
 
@@ -212,7 +204,8 @@ function detail(e, sales) {
     ? `<li>Vendor sell price<b>${gold(e.vend)}</b></li>${e.gross != null ? `<li class="muted"><span>AH would net (after cut, deposit)</span><b>${gold(e.ahNet)}</b></li>` : ""}`
     : `<li>Cheapest listing${e.levels ? ` (${n0(e.nListed)} listed)` : ""}<b>${e.minList != null ? gold(e.minList) : "none"}</b></li>
        <li>Average sold price${e.st.units ? ` (${n0(e.st.units)} sold)` : ""}<b>${e.st.avg != null ? gold(Math.round(e.st.avg)) : "no sales yet"}</b></li>
-       <li>Price used (the lower)<b>${gold(e.gross)}</b></li>
+       ${e.today !== e.gross ? `<li>Today (the lower)<b>${gold(e.today)}</b></li>
+       <li>Falling ${Math.round(-e.tr.perDay * 100)}%/day: price when it sells<b>${gold(e.gross)}</b></li>` : `<li>Price used (the lower)<b>${gold(e.gross)}</b></li>`}
        <li>AH cut 5%<b>−${gold(e.gross - Math.floor(e.gross * AH_CUT))}</b></li>
        <li>Lost deposit${e.over ? " ×2 (oversupplied)" : ""}<b>${e.deposit ? "−" + gold(e.deposit) : gold(0)}</b></li>
        <li>Net per unit<b>${gold(e.ahNet)}</b></li>
@@ -354,8 +347,9 @@ function bind() {
 }
 
 async function fetchData() {
-  const [prices, sales] = await Promise.all([loadPrices(), loadJson("data/sales.json?t=" + Date.now()).catch(() => null)]);
-  PRICES = prices; SALES = sales; loadedAt = Date.now();
+  const t = "?t=" + Date.now();
+  const [prices, sales, trends] = await Promise.all([loadPrices(), loadJson("data/sales.json" + t).catch(() => null), loadJson("data/trends.json" + t).catch(() => null)]);
+  PRICES = prices; SALES = sales; TRENDS = trends; loadedAt = Date.now();
 }
 // Keep the numbers live: recheck prices and sales every 10 minutes, and when a stale tab becomes visible.
 async function refresh() {

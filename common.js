@@ -123,3 +123,45 @@ export function salesStats(SALES, factions, minHours = 6) {
   };
   return { fs, hours, ok: hours >= minHours, stat };
 }
+
+// --- market trends (data/trends.json from the price bot; sales.json as a fallback) -----------------
+// marketTrend(...) -> { pct, perDay, supply, src } or null
+//   pct     recent price change (for arrows and spike flags)
+//   perDay  daily price change used to project sell prices (negative = falling)
+//   supply  change in units listed over 24 h (positive = more competition piling up)
+// The bot's price is the average of the cheapest 10% of listed units, so one cheap listing can't fake a crash.
+export function marketTrend(TRENDS, SALES, faction, id) {
+  const t = TRENDS?.factions?.[faction]?.[id];
+  if (t) {
+    const [p0, p24, p72, l0, l24] = t;
+    const supply = l24 ? l0 / l24 - 1 : null;
+    if (p0 && p72) return { pct: p24 ? p0 / p24 - 1 : p0 / p72 - 1, perDay: (p0 / p72) ** (1 / 3) - 1, supply, src: "market price, last 3 days" };
+    if (p0 && p24) return { pct: p0 / p24 - 1, perDay: p0 / p24 - 1, supply, src: "market price, last 24 h" };
+  }
+  // Fallback until the bot has 24 h of history: average sold price of the last 6 h against the hours
+  // before. Noisier, so it only counts half as a daily trend.
+  const rows = SALES?.factions?.[faction]?.items?.[id];
+  if (!rows?.length) return null;
+  const now = Date.parse(SALES.updated || new Date().toISOString());
+  let ru = 0, rv = 0, eu = 0, ev = 0;
+  for (const [hr, n, v] of rows) {
+    if (now - Date.parse(hr + ":00:00Z") < 6 * 3.6e6) { ru += n; rv += v; } else { eu += n; ev += v; }
+  }
+  if (ru < 3 || eu < 3) return null;
+  const pct = (rv / ru) / (ev / eu) - 1;
+  return { pct, perDay: Math.max(-0.25, pct / 2), supply: null, src: "average sold price, last 6 h vs earlier" };
+}
+
+// What `price` is likely to be in `days` days if a falling trend continues. Never projects a rise
+// (you can't count on that), caps the fall at 50% a day and never goes below 40% of today's price.
+export function projectPrice(price, tr, days) {
+  if (price == null || !tr || !(tr.perDay < 0) || days <= 0) return price;
+  return Math.floor(price * Math.max(0.4, (1 + Math.max(tr.perDay, -0.5)) ** days));
+}
+
+// "▼8%/day" style label for a trend (empty when flat)
+export const trendLabel = (tr, perDay = false) => {
+  const v = perDay ? tr?.perDay : tr?.pct;
+  if (v == null || Math.abs(v) < 0.03) return "";
+  return `<span class="trend ${v > 0 ? "up" : "down"}" title="${esc(tr.src)}">${v > 0 ? "▲" : "▼"}${Math.abs(Math.round(v * 100))}%${perDay ? "/day" : ""}</span>`;
+};

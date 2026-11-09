@@ -1,4 +1,4 @@
-import { $, store, esc, gold, makeBook, buyCost, consume, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh } from "./common.js";
+import { $, store, esc, gold, makeBook, buyCost, consume, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, marketTrend, projectPrice, trendLabel } from "./common.js";
 
 const RARE_STATIONS = new Set(["Black Anvil", "Black Forge", "Arcane Forge", "Moonwell", "Icebellow Anvil", "Master Forge", "Anarchist's Workbench"]);
 const state = {
@@ -136,7 +136,10 @@ function toolOptions(c) { return REC.tools?.categories?.[c]?.ok || []; }
 // 5% cut. Until there are MIN_HOURS of sales history it falls back to the listing-based guess:
 // at most a quarter of the units currently listed, at the cheapest listing.
 const AH_CUT = 0.95, SHARE = 0.5, MIN_HOURS = 6, ABSORB = 0.25;
-let SALES = null;
+// Prices move while you level and sell: a falling price is projected to the middle of your selling time
+// (plus half a day to craft), and your share of sales shrinks when more than CROWD_DAYS of supply is listed.
+const CROWD_DAYS = 2;
+let SALES = null, TRENDS = null;
 function salesInfo() {
   const fs = [state.faction, ...(state.neutral ? ["neutral"] : [])].map(f => SALES?.factions?.[f]).filter(Boolean);
   const hours = fs.length ? Math.min(...fs.map(f => f.hours || 0)) : 0;
@@ -153,13 +156,22 @@ function saleModel(book0) {
     const s = { perDay: info.hours ? units / info.hours * 24 : 0, avg: units ? value / units : null };
     stats.set(id, s); return s;
   };
+  const trends = new Map();
+  const trend = id => trends.has(id) ? trends.get(id) : trends.set(id, marketTrend(TRENDS, SALES, state.faction, id)).get(id);
+  const sellDays = state.wait / 2 + 0.5; // when the average unit sells: mid selling window, after crafting
   const ahUnit = id => {
     const now = minPrice(book0, id), avg = stat(id).avg;
     const p = now != null && avg != null ? Math.min(now, avg) : now ?? avg;
-    return p == null ? null : Math.floor(p * AH_CUT);
+    return p == null ? null : Math.floor(projectPrice(p, trend(id), sellDays) * AH_CUT);
   };
+  // days of supply on the AH: units listed / units sold per day
+  const supplyDays = id => { const d = stat(id).perDay; const n = listed(book0, id); return d > 0 ? n / d : n > 0 ? Infinity : 0; };
   const cap = id => {
-    if (info.ok) return Math.floor(stat(id).perDay * state.wait * SHARE);
+    if (info.ok) {
+      const sd = supplyDays(id);
+      const share = sd > CROWD_DAYS ? SHARE * CROWD_DAYS / sd : SHARE; // crowded market: you get less of it
+      return Math.floor(stat(id).perDay * state.wait * share);
+    }
     const n = listed(book0, id);
     return n ? Math.max(2, Math.floor(n * ABSORB)) : 0;
   };
@@ -177,7 +189,7 @@ function saleModel(book0) {
     made.set(id, Math.max(0, (made.get(id) || 0) - units));
     sold.set(id, Math.max(0, (sold.get(id) || 0) - onAh));
   }
-  return { value, unsell, sold, made, ahUnit, stat, info };
+  return { value, unsell, sold, made, ahUnit, stat, info, trend, supplyDays };
 }
 
 // `future`: reagents (item id -> units) a first pass of the route used. Crafting those for skill-ups
@@ -399,7 +411,7 @@ function plan(future = null) {
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
   const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, demand };
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand };
 }
 
 // Profit / loss: positive (green, "+") when you make money, negative (red, "−") when you lose it.
@@ -415,7 +427,9 @@ function sellInfo(st, p) {
   const note = !p.salesInfo.ok ? (st.onAh ? `${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : "not listed")
     : st.onAh ? `${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
     : rate > 0 ? `sells ~${perDay(rate)}/day, not above vendor` : "none sold";
-  return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note };
+  const tr = p.trend(st.r.item);
+  const falling = tr && tr.perDay < -0.03 ? ` · price falling ${trendLabel(tr, true)}, priced for when you'd sell` : "";
+  return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note: note + falling };
 }
 // "Alternative" fact in a step's details: the runner-up recipe and what using it would change.
 function altFact(st) {
@@ -532,7 +546,7 @@ function render() {
         return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${n0(e.made)}</td>
           <td class="num">${si.ok ? perDay(e.stat.perDay) : '<span class="muted">collecting</span>'}<small>${n0(listed(BOOK0, e.id))} listed</small></td>
           <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n && si.ok ? `<small>~${days < 1 ? "<1" : days.toFixed(1)} days</small>` : ""}</td>
-          <td class="num">${e.unit != null ? gold(e.unit) : "—"}${e.stat.avg != null ? `<small>sold avg ${gold(Math.round(e.stat.avg))}</small>` : ""}</td>
+          <td class="num">${e.unit != null ? gold(e.unit) : "—"}${trendLabel(p.trend(e.id), true)}${e.stat.avg != null ? `<small>sold avg ${gold(Math.round(e.stat.avg))}</small>` : ""}${si.ok && p.supplyDays(e.id) > CROWD_DAYS ? `<small class="neg">${p.supplyDays(e.id) === Infinity ? "nothing sold" : Math.round(p.supplyDays(e.id)) + " days of supply listed"}</small>` : ""}</td>
           <td class="num">${gold(e.vend)}</td>
           <td class="num">${gold(e.value)}</td></tr>`;
       }).join("")
@@ -579,9 +593,27 @@ function bind() {
   $("#excl").onclick = e => { const id = Number(e.target.dataset?.unex); if (id) { state.excluded.delete(id); store.set("lv:excluded", [...state.excluded]); render(); } };
 }
 
+// The bot publishes new prices about hourly. Re-planning by itself would move the route under the
+// reader, so offer it instead.
+async function checkForNewPrices() {
+  try {
+    const fresh = await loadPrices();
+    if (!PRICES || fresh.updated === PRICES.updated) return;
+    $("#status").innerHTML = `New prices are in (${ago(fresh.updated)}). <button class="chip" id="replan">Re-plan with them</button>`;
+    $("#replan").onclick = async () => {
+      [SALES, TRENDS] = await Promise.all([loadJson("data/sales.json?t=" + Date.now()).catch(() => SALES), loadJson("data/trends.json?t=" + Date.now()).catch(() => TRENDS)]);
+      PRICES = fresh;
+      $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b> · recipes from client build ${esc(REC.build)}`;
+      render();
+    };
+  } catch { /* offline: try again next time */ }
+}
+
 async function load() {
   try {
     [PRICES, REC, SALES] = await Promise.all([loadPrices(), loadJson("data/recipes.json"), loadJson("data/sales.json?t=" + Date.now()).catch(() => null)]);
+    TRENDS = await loadJson("data/trends.json?t=" + Date.now()).catch(() => null);
+    setInterval(checkForNewPrices, 10 * 60e3);
     ITEMS = REC.items;
     $("#wait").value = state.wait;
     $("#prof").innerHTML = REC.professions.filter(p => p.name !== "Mining").map(p => `<option ${p.name === state.prof ? "selected" : ""}>${p.name}</option>`).join("");

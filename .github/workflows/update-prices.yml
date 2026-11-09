@@ -56,7 +56,7 @@ jobs:
             force=""; [ "$first" = 1 ] && [ "$EVENT" = push ] && force=1
             FORCE=$force node scripts/fetch-prices.mjs || echo "::warning::fetch failed, trying again next round"
             first=0
-            git add data/prices.json data/crate-ids.json data/sales.json
+            git add data/prices.json data/crate-ids.json data/sales.json data/trends.json
             if ! git diff --cached --quiet; then
               git commit -q -m "Update AH prices $(date -u +'%Y-%m-%d %H:%M')"
               { git pull -q --rebase && git push -q; } || echo "::warning::push failed, will retry with the next snapshot"

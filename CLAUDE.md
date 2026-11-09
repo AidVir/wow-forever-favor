@@ -64,6 +64,15 @@ scripts/serve.mjs          local preview server; serve.cmd is a double-click lau
    - Gaps longer than 2 hours are not counted.
    - Results go to `data/sales.json`, kept for 7 days: `factions.{f}.items[id] = [[hour, units, copper]]`
      and `hours` = snapshot time covered.
+5. **Track market trends.** Per item a robust market price (average of the cheapest 10% of listed
+   units, 5–200 units, so one cheap listing can't move it) and the units listed. History is one point
+   per 3 h for 7 days in `.cache/market.json` (Actions cache); `data/trends.json` publishes
+   `factions.{f}[id] = [price now, 24 h ago, 72 h ago, units now, 24 h ago, 72 h ago]` (null = no
+   history yet) and `hours` of history per faction.
+
+**Client trend model** (`common.js`): `marketTrend()` gives `{pct, perDay, supply, src}` from
+`trends.json` (72 h → daily rate, else 24 h), falling back to sold prices in `sales.json` (counted at
+half). `projectPrice(price, trend, days)` only projects falls (max −50%/day, floor 40% of today).
 
 **Workflow (`update-prices.yml`).**
 - **Why it loops:** GitHub's cron was unreliable on this repo, so a manual or scheduled run loops
@@ -146,7 +155,10 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   `node scripts/learn-levels.mjs` to re-apply it to `recipes.json` without Blizzard credentials.
 - **Resale of crafted items:** `saleModel()`.
   - **With 6+ hours of sales history:** sell up to `perDay × waitDays × 50%` on the AH. The price is
-    the lower of the cheapest listing and the average sold price, times 0.95 (the AH cut).
+    the lower of the cheapest listing and the average sold price, projected to mid selling time
+    (`wait/2 + 0.5` days) when falling, times 0.95 (the AH cut). Above `CROWD_DAYS` (2) days of supply
+    listed, your 50% share shrinks in proportion. The sell list shows trends and crowded markets; the
+    page checks for new prices every 10 minutes and offers "Re-plan with them" (it never re-plans by itself).
   - **Before that:** fall back to up to 25% of the currently listed units, at the cheapest listing.
   - **The rest** is vendored. Vendor credit is capped at 75% of cost in route scoring.
 - **Scoring of profitable crafts:** a craft that makes money is scored by its profit per craft, not
@@ -214,7 +226,8 @@ sustainable profit per day. The constants at the top of `money.js` are the rules
 them under "How this is calculated", so change both together. `money.css` holds page-only rules on top
 of the `style.css` tokens. `acquire()` and `salesStats()` at the end of `common.js` are its cost and
 demand models (`leveling.js` still has its own copies and could switch to them).
-- **Sell price:** min(cheapest listing, average sold) on the faction AH × 0.95, minus a lost deposit of
+- **Sell price:** min(cheapest listing, average sold) on the faction AH, projected `SELL_DAYS` (1) ahead
+  when falling (flag `price falling` at −5%/day; `supply rising` at +50% listed in 24 h), × 0.95, minus a lost deposit of
   15% of vendor sell price (×2 when oversupplied); the vendor price if higher. Blackwater only for buying.
 - **Reagent cost:** walks the order book for a whole day's crafts; crafts intermediates when cheaper;
   "I gather my own" values reagents at AH sell value (or 0). Crafts/day are capped by AH reagent supply.

@@ -12,7 +12,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const PORT = Number(args.find(a => /^\d+$/.test(a)) || 5178);
 const LIVE = !args.includes("--local-data");
-const LIVE_FILES = new Set(["/data/prices.json", "/data/sales.json"]);
+const LIVE_FILES = new Set(["/data/prices.json", "/data/sales.json", "/data/trends.json"]);
 const RAW = "https://raw.githubusercontent.com/AidVir/wow-forever-favor/main";
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
 

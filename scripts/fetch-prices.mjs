@@ -21,6 +21,11 @@ const SALES = new URL("../data/sales.json", import.meta.url);
 // Previous snapshot's listings, kept between runs (GitHub Actions cache in CI, not committed).
 const STATE = new URL("../.cache/ah-state.json", import.meta.url);
 const SALES_DAYS = 7;
+// Market history for trends: a robust price and the units listed per item, one point per 3 hours for
+// 7 days, kept in the Actions cache; the 24 h / 72 h comparison is published in data/trends.json.
+const MARKET = new URL("../.cache/market.json", import.meta.url);
+const TRENDS = new URL("../data/trends.json", import.meta.url);
+const MARKET_STEP_H = 3;
 
 async function token() {
   const id = process.env.BLIZZARD_CLIENT_ID, secret = process.env.BLIZZARD_CLIENT_SECRET;
@@ -137,9 +142,54 @@ async function scanHouse(houseId, wanted) {
       if (x.id) snap.commodities.list[x.id] = [id, x.quantity, x.unit_price, TL[x.time_left] ?? 0];
     }
   }
-  const items = {};
-  for (const [id, l] of Object.entries(raw)) items[id] = compress(l);
-  return { lastModified, totalAuctions: total, items, snap };
+  const items = {}, market = {};
+  for (const [id, l] of Object.entries(raw)) { items[id] = compress(l); market[id] = marketPoint(l); }
+  return { lastModified, totalAuctions: total, items, snap, market };
+}
+
+// A price that one cheap listing can't move: the average unit price of the cheapest 10% of the units
+// listed (at least 5, at most 200 units). Returns [price, units listed].
+function marketPoint(listings) {
+  const l = [...listings].sort((a, b) => a[0] - b[0]);
+  const units = l.reduce((a, [, q]) => a + q, 0);
+  let want = Math.min(200, Math.max(5, Math.ceil(units * 0.1))), got = 0, value = 0;
+  for (const [u, q] of l) { const k = Math.min(q, want - got); got += k; value += k * u; if (got >= want) break; }
+  return [Math.round(value / Math.max(1, got)), units];
+}
+
+// --- market trends ---------------------------------------------------------------------------
+async function trackMarket(scans) {
+  const hist = existsSync(MARKET) ? JSON.parse(await readFile(MARKET, "utf8")) : {};
+  const nowH = Math.floor(Date.now() / 3.6e6);
+  const out = { updated: new Date().toISOString(), note: "Per item: [price now, 24 h ago, 72 h ago, units listed now, 24 h ago, 72 h ago]; price = average of the cheapest 10% of listed units. null = no history yet.", hours: {}, factions: {} };
+  // the history point closest to `ago` hours back, if one is within `tol` hours
+  const at = (pts, ago, tol) => {
+    let best = null;
+    for (const p of pts) { const d = Math.abs(nowH - ago - p[0]); if (d <= tol && (!best || d < best.d)) best = { p, d }; }
+    return best?.p || null;
+  };
+  for (const [faction, { market }] of Object.entries(scans)) {
+    const h = (hist[faction] ||= {});
+    const f = (out.factions[faction] = {});
+    for (const [id, [price, units]] of Object.entries(market)) {
+      const pts = (h[id] ||= []);
+      const d24 = at(pts, 24, 4), d72 = at(pts, 72, 8);
+      f[id] = [price, d24?.[1] ?? null, d72?.[1] ?? null, units, d24?.[2] ?? null, d72?.[2] ?? null];
+      if (!pts.length || nowH - pts[pts.length - 1][0] >= MARKET_STEP_H) pts.push([nowH, price, units]);
+    }
+    // items no longer listed: record 0 units so supply trends see them sell out
+    for (const [id, pts] of Object.entries(h)) {
+      if (!market[id] && pts.length && nowH - pts[pts.length - 1][0] >= MARKET_STEP_H) pts.push([nowH, pts[pts.length - 1][1], 0]);
+      while (pts.length && pts[0][0] < nowH - 24 * SALES_DAYS) pts.shift();
+      if (!pts.length) delete h[id];
+    }
+    const oldest = Math.min(...Object.values(h).map(p => p[0]?.[0] ?? nowH));
+    out.hours[faction] = nowH - oldest;
+  }
+  await mkdir(new URL("../.cache/", import.meta.url), { recursive: true });
+  await writeFile(MARKET, JSON.stringify(hist));
+  await writeFile(TRENDS, JSON.stringify(out));
+  console.log("trends:", Object.entries(out.hours).map(([f, n]) => `${f} ${n} h of history`).join(", "));
 }
 
 // --- sales tracking ---------------------------------------------------------------------
@@ -227,7 +277,7 @@ async function main() {
   const factions = {}, snaps = {};
   for (const [faction, hid] of Object.entries(houses)) {
     const scan = await scanHouse(hid, wanted);
-    snaps[faction] = { snap: scan.snap }; delete scan.snap;
+    snaps[faction] = { snap: scan.snap, market: scan.market }; delete scan.snap; delete scan.market;
     factions[faction] = { house: { id: hid, name: index.find(h => h.id === hid)?.name || String(hid) }, ...scan };
     console.log(`${faction}: house ${hid}, ${scan.totalAuctions} auctions, ${Object.keys(scan.items).length} tracked items listed`);
   }
@@ -247,6 +297,7 @@ async function main() {
   await mkdir(new URL("../data/", import.meta.url), { recursive: true });
   await writeFile(OUT, JSON.stringify(out));
   await trackSales(snaps);
+  await trackMarket(snaps);
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "scanned=true\n");
   console.log("wrote", OUT.pathname);
 }
