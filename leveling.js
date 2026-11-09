@@ -481,6 +481,29 @@ function altFact(st) {
     <small>${reag}</small><small>${cost}${extras ? " · " + extras : ""}</small>
     <button class="chip" data-ex="${st.r.id}" title="Excludes ${esc(st.r.name)} from the whole route and re-plans">Use it instead</button></div>`;
 }
+// How a step's recipe is learned, as a short tag in the row and a sentence in the details:
+// trainer (with the skill it is taught at and its fee), pattern (price or source, skill it can be used from),
+// or known from the start.
+function learnTag(st) {
+  const r = st.r, at = r.learn;
+  if (r.source === "auto") return ` <span class="tag learn" title="Every character knows this recipe">known from the start</span>`;
+  if (r.source === "trainer") {
+    const fee = st.patPaid ? ` · ${gold(st.patPaid)}` : r.train ? " · already learned" : " · fee not in our data";
+    return ` <span class="tag learn train" title="Taught by your profession trainer">trainer · learn at skill ${at}${fee}</span>`;
+  }
+  if (r.source === "item") {
+    const price = st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern";
+    return ` <span class="tag pat" title="${esc(patternText(r, st.pattern).replace(/<[^>]+>/g, ""))}">${price} · usable at skill ${at}</span>`;
+  }
+  return "";
+}
+function learnText(st) {
+  const r = st.r, at = r.learn;
+  if (r.source === "auto") return "Known from the start (every character has it)";
+  if (r.source === "trainer") return `From your ${esc(r.prof || state.prof)} trainer at skill ${at}${r.train ? `, costs ${gold(r.train)}` : ""}${st.patPaid ? " (paid on this step)" : r.train ? " (learned on an earlier step)" : ""}`;
+  if (r.source === "item") return `${patternText(r, st.pattern)}; usable from skill ${at}`;
+  return `Learn at skill ${at}`;
+}
 const OPEN_STEPS = new Set(); // expanded step rows (not saved)
 
 function render() {
@@ -549,7 +572,7 @@ function render() {
       : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
-      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="${esc(pattern.replace(/<[^>]+>/g, ""))}">${st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern"}</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
+      <td class="c-craft"><b>${st.crafts} × ${name}</b>${learnTag(st)}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
         toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? (r.source === "trainer" ? "training " : "pattern ") + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${vend}${ret}
@@ -563,6 +586,7 @@ function render() {
         r.est ? `<span class="tag">trainer skill est.</span>` : "",
       ].filter(Boolean).join(" ");
       html += `<tr class="detail"><td colspan="${cols}"><div class="facts">
+        <div><span class="k">How to learn</span><span>${learnText(st)}</span></div>
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
         ${pattern ? `<div><span class="k">Pattern</span><span>${pattern}</span></div>` : ""}
         ${toolsNeed.length ? `<div><span class="k">Tools</span><span>${toolsNeed.map(esc).join(", ")}</span><small>bought or made once, the first time a step needs them</small></div>` : ""}

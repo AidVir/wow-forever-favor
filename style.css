@@ -531,3 +531,7 @@ table.steps tr.train .meta { display: block; margin-top: 2px; }
 @media (max-width: 760px) { .alt-fact { grid-column: 1 / -1; } }
 .trend { font-size: 11px; font-weight: 700; margin-left: 4px; white-space: nowrap; }
 .trend.down { color: var(--bad); } .trend.up { color: var(--good); }
+
+/* leveling: how a step's recipe is learned */
+.tag.learn { color: var(--muted); }
+.tag.learn.train { color: var(--text); border-color: var(--line-strong); }
