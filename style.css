@@ -491,6 +491,11 @@ table.steps tr.train .meta { display: block; margin-top: 2px; }
   table.writs .c-writ { grid-area: writ; font-size: 13px; text-align: right !important; }
 
   table.steps tr.row { grid-template-columns: 58px 1fr 1fr 30px; grid-template-areas: "rng craft craft x" ". cost ret ret"; }
+  table.steps.with-vendor tr.row { grid-template-columns: 58px 1fr 1fr 1fr 30px; grid-template-areas: "rng craft craft craft x" ". cost vend ret ret"; }
+  table.steps .c-vend { grid-area: vend; font-size: 13.5px; }
+  table.steps .c-vend small { display: block; margin-left: 0; }
+  table.steps.with-vendor td.c-cost::before, table.steps.with-vendor td.c-vend::before, table.steps.with-vendor td.c-ret::before { display: block; margin: 0 0 1px; }
+  table.steps.with-vendor td[data-label] small { display: block; margin-left: 0; }
   table.steps .rng { grid-area: rng; text-align: left; } table.steps .c-craft { grid-area: craft; }
   table.steps .c-cost { grid-area: cost; font-size: 13.5px; } table.steps .c-ret { grid-area: ret; font-size: 13.5px; }
   table.steps .c-x { grid-area: x; text-align: right; margin-top: -4px; }

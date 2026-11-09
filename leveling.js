@@ -495,6 +495,11 @@ function render() {
   // Skill colours, the other selling mode, sales notes and recipe tags live in the expandable detail row.
   const retVendor = state.sell === "vendor";
   $("#retHead").textContent = retVendor ? "Vendor value" : "AH value (est.)";
+  // When selling on the AH, the vendor value sits next to it so you can compare (the better one is green).
+  const showVend = !retVendor;
+  $("#vendHead").hidden = !showVend;
+  $("#stepsTable").classList.toggle("with-vendor", showVend);
+  const cols = showVend ? 6 : 5;
   const trained = new Set();
   $("#steps").innerHTML = p.steps.map(st => {
     const r = st.r, key = `${r.id}@${st.from}`, open = OPEN_STEPS.has(key);
@@ -503,7 +508,7 @@ function render() {
     for (const k of RANKS) {
       if (trained.has(k.name) || st.from < k.cap || state.from >= k.cap) continue;
       trained.add(k.name);
-      train += `<tr class="train"><td class="num rng">${k.cap}</td><td class="c-craft" colspan="4"><b>Train ${k.name} ${esc(prof.name)}</b> before skill ${k.cap}
+      train += `<tr class="train"><td class="num rng">${k.cap}</td><td class="c-craft" colspan="${cols - 1}"><b>Train ${k.name} ${esc(prof.name)}</b> before skill ${k.cap}
         <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(trainerFor(prof.name, k.name))}</span></td></tr>`;
     }
     const reag = r.reagents.map(([id, q]) => `${q} × ${wh(id, ITEMS[id]?.n || id)}`).join(", ");
@@ -516,6 +521,8 @@ function render() {
     const kept = Math.round(st.kept);
     const name = r.item ? wh(r.item, r.name) : esc(r.name);
     const s = sellInfo(st, p);
+    const vend = !showVend ? "" : !s ? `<td class="num c-vend"><span class="muted">—</span></td>`
+      : `<td class="num c-vend${s.vendorBetter ? " better" : ""}" data-label="Vendor">${gold(st.vendor)}<small>${pl(st.vendor - st.cost)}</small></td>`;
     const ret = !s ? `<td class="num c-ret"><span class="muted">—</span></td>`
       : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
@@ -523,7 +530,7 @@ function render() {
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="${esc(pattern.replace(/<[^>]+>/g, ""))}">${st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern"}</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
         toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? "pattern " + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
-      ${ret}
+      ${vend}${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;
     if (open) {
@@ -533,7 +540,7 @@ function render() {
         r.isNew ? `<span class="tag new">new in Forever</span>` : "",
         r.est ? `<span class="tag">trainer skill est.</span>` : "",
       ].filter(Boolean).join(" ");
-      html += `<tr class="detail"><td colspan="5"><div class="facts">
+      html += `<tr class="detail"><td colspan="${cols}"><div class="facts">
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
         ${pattern ? `<div><span class="k">Pattern</span><span>${pattern}</span></div>` : ""}
         ${toolsNeed.length ? `<div><span class="k">Tools</span><span>${toolsNeed.map(esc).join(", ")}</span><small>bought or made once, the first time a step needs them</small></div>` : ""}
@@ -545,7 +552,7 @@ function render() {
       </div></td></tr>`;
     }
     return html;
-  }).join("") || `<tr><td colspan="5" class="empty">Nothing to plan.</td></tr>`;
+  }).join("") || `<tr><td colspan="${cols}" class="empty">Nothing to plan.</td></tr>`;
   const si = p.salesInfo;
   $("#salesnote").innerHTML = !SALES ? "Sales data could not be loaded, so everything is valued at vendor price."
     : si.ok ? `Sales measured over the last <b>${Math.round(si.hours)} h</b> of snapshots${si.hours < 48 ? " — still a short window, so treat daily rates as rough" : ""}.`
