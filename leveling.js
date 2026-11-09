@@ -49,7 +49,9 @@ function levelCap() {
 // Recipes needing more crafts than this per skill point are skipped while a faster one exists.
 const MAX_CRAFTS_PER_POINT = 3;
 // Stay on the current recipe unless another one is clearly cheaper (fewer, longer steps).
-const STICK = 0.10, STICK_MIN = 50; // 10%, at least 50 copper per point
+const STICK = 0.10, STICK_MIN = 50;
+// Before the route is known, a pattern's price is spread over this many points.
+const ONCE_SPREAD = 5; // 10%, at least 50 copper per point
 
 const chance = (r, s) => s < r.yellow ? 1 : s >= r.grey ? 0 : (r.grey - s) / (r.grey - r.yellow);
 const color = (r, s) => s < r.yellow ? "orange" : s < r.green ? "yellow" : s < r.grey ? "green" : "grey";
@@ -195,7 +197,10 @@ function saleModel(book0) {
 // `future`: reagents (item id -> units) a first pass of the route used. Crafting those for skill-ups
 // counts at what buying them would cost, and later steps use them up ("keep N for later"), like the
 // written guides do with grinding stones, bolts and blasting powder.
-function plan(future = null) {
+// `usage`: skill points each recipe got in the first pass. A pattern or tool bought for a recipe is
+// spread over those points (at least 1), so a pattern bought for 2 crafts carries its full price.
+function plan(future = null, usage = null) {
+  const spread = r => Math.max(1, usage ? usage.get(r.id) ?? ONCE_SPREAD : ONCE_SPREAD);
   const prof = profData();
   BOOK0 = makeBook(PRICES, state.faction, state.neutral);
   const book = makeBook(PRICES, state.faction, state.neutral);
@@ -340,9 +345,9 @@ function plan(future = null) {
       // cost per skill point. A profitable craft (net < 0) is scored by its profit per craft, not divided by
       // the skill-up chance, otherwise low-chance green recipes would look "better" the less they level you.
       const net = cost - back;
-      const once = pat + (tools?.cost || 0); // pattern + tools: paid once, amortised over ~5 points
-      const per = ((net >= 0 ? net / c : net) + timeCost / c + once / 5) / r.ups;
+      const once = pat + (tools?.cost || 0); // pattern + tools: paid once
       const run = ((net >= 0 ? net / c : net) + timeCost / c) / r.ups; // per point, without one-time costs
+      const per = run + once / spread(r); // one-time costs spread over the points this recipe gets
       const cand = { r, per, run, once, cost, back, c, plan, tools, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
       cands.push(cand);
       if (!best || per < best.per) best = cand;
@@ -370,9 +375,10 @@ function plan(future = null) {
     const others = cands.filter(x => x.r !== r);
     const pool = state.fast && others.some(x => !x.slow) ? others.filter(x => !x.slow) : others;
     const alt = pool.reduce((a, x) => !a || x.per < a.per ? x : a, null);
+    let patPaid = 0;
     if (!learned.has(r.id)) {
       const pc = patternCost(book, r); learned.set(r.id, pc);
-      if (pc.cost) { total += pc.cost; if (pc.how === "ah") consume(book, pc.id, 1); }
+      if (pc.cost) { total += pc.cost; patPaid = pc.cost; if (pc.how === "ah") consume(book, pc.id, 1); }
     }
     // get the tools this recipe needs (once): buy them, or craft them with this profession
     const got = [];
@@ -386,10 +392,13 @@ function plan(future = null) {
     const rankBreak = last && last.from < s && RANKS.some(k => k.cap === s); // train here: start a new step
     if (!last || last.r !== r || rankBreak) {
       settle(last);
-      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id), kept: 0, used: new Map(), toolsGot: [] };
+      last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id), kept: 0, used: new Map(), toolsGot: [], once: 0, patPaid: 0 };
       steps.push(last);
     }
     last.toolsGot.push(...got);
+    // one-time costs belong to the step that pays them, so its cost and profit are honest
+    const toolPaid = got.reduce((a, t) => a + t.cost, 0);
+    last.cost += patPaid + toolPaid; last.once += patPaid + toolPaid; last.patPaid += patPaid;
     // the step's alternative: the runner-up at its first point; add up what it would cost over the step
     if (!last.alt && alt) last.alt = { r: alt.r, extra: 0, pts: 0, once: alt.once, slow: alt.slow, c: alt.c };
     if (last.alt) {
@@ -411,7 +420,8 @@ function plan(future = null) {
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
   const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand };
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
+    usage: steps.reduce((m, st) => m.set(st.r.id, (m.get(st.r.id) || 0) + (st.to - st.from)), new Map()) };
 }
 
 // Profit / loss: positive (green, "+") when you make money, negative (red, "−") when you lose it.
@@ -460,7 +470,8 @@ function render() {
   $("#stations").innerHTML = stations.length ? stations.map(n => `<label class="chk"><input type="checkbox" data-station="${esc(n)}" ${state.stationsOff.has(n) ? "" : "checked"}> ${esc(n)}</label>`).join("") : `<span class="muted">None needed</span>`;
 
   const t0 = performance.now();
-  const p = plan(plan().demand); // second pass knows which intermediates the route needs later
+  const p1 = plan();
+  const p = plan(p1.demand, p1.usage); // second pass knows which intermediates the route needs later and how long each recipe is used
   // The answer for the chosen selling mode is the big number; the other totals sit beside it.
   const sums = {
     none: { big: `Materials${state.patterns !== "trainer" ? " + patterns" : ""} cost`, small: "Materials", val: pl(-p.total), sub: "what you spend" },
@@ -509,9 +520,9 @@ function render() {
       : `<td class="num c-ret${(retVendor ? s.vendorBetter : s.ahBetter) ? " better" : ""}" data-label="${retVendor ? "Vendor" : "AH"}">${gold(retVendor ? st.vendor : st.ah)}<small>${pl((retVendor ? st.vendor : st.ah) - st.cost)}</small></td>`;
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
-      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="Learned from a pattern / recipe item">pattern</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
+      <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="${esc(pattern.replace(/<[^>]+>/g, ""))}">${st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern"}</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
         toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
-      <td class="num c-cost" data-label="Cost">${gold(st.cost)}</td>
+      <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? "pattern " + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;
