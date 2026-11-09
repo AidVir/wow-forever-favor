@@ -37,7 +37,8 @@ const state = {
   neutral: store.get("neutral", false),
   profs: (v => v && typeof v === "object" ? v : {})(store.get("mm:profs", {})), // name -> skill (missing = don't have it)
   share: (v => [0.1, 0.25, 0.5, 0.75, 1].includes(v) ? v : 0.5)(store.get("mm:share", 0.5)),
-  minProfit: num(store.get("mm:minProfit", 10), 10),
+  // the default used to be 10s; an old saved 10 moves to 0 once
+  minProfit: (v => v === 10 && !store.get("mm:minProfitV2", false) ? 0 : v)(num(store.get("mm:minProfit", 0), 0)),
   minMargin: num(store.get("mm:minMargin", 5), 5),
   time: num(store.get("mm:time", 0), 0),
   minSales: num(store.get("mm:minSales", 5), 5),
@@ -312,7 +313,7 @@ function bind() {
   bindFaction(state, render);
   const set = (k, v, key = "mm:" + k) => { state[k] = v; store.set(key, v); render(); };
   $("#share").onchange = e => set("share", Number(e.target.value));
-  $("#minprofit").oninput = e => set("minProfit", Math.max(0, Number(e.target.value) || 0));
+  $("#minprofit").oninput = e => store.set("mm:minProfitV2", true) || set("minProfit", Math.max(0, Number(e.target.value) || 0));
   $("#minmargin").oninput = e => set("minMargin", Math.max(0, Number(e.target.value) || 0));
   $("#time").oninput = e => set("time", Math.max(0, Number(e.target.value) || 0));
   $("#minsales").oninput = e => set("minSales", Math.max(0, Number(e.target.value) || 0));
