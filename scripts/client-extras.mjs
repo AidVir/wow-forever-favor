@@ -9,9 +9,13 @@
 //  - Pattern sources: Classic item data (nexus-devs/wow-classic-items) says whether a recipe item is sold
 //    by a vendor (NPC + price), rewarded by a quest or dropped. Forever-only patterns are not in it.
 //
+//  - Trainer costs: data/trainer.json (Wowhead Forever trainer data) gives each trainer recipe's cost and
+//    the skill Forever's trainers teach it at, plus the fee for each rank (Apprentice..Artisan).
+//
 //   node scripts/client-extras.mjs      patches data/recipes.json in place
 
 import { parseCsv } from "./learn-levels.mjs";
+import { readFileSync } from "node:fs";
 
 // Tools sold by ordinary trade / profession supply vendors (everything else must be crafted or bought on the AH).
 export const VENDOR_TOOLS = new Set([5956 /* Blacksmith Hammer */, 2901 /* Mining Pick */, 7005 /* Skinning Knife */, 4471 /* Flint and Tinder */]);
@@ -91,7 +95,42 @@ export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
     }
   }
   rec.tools = tools;
-  return { withTools, withSource };
+  const trained = applyTrainer(rec, sla);
+  return { withTools, withSource, trained };
+}
+
+// Training cost + Forever learn skill per trainer recipe, and rank fees per profession.
+export function applyTrainer(rec, sla, trainer = JSON.parse(readFileSync(new URL("../data/trainer.json", import.meta.url), "utf8"))) {
+  const bySpell = new Map(); // spell id -> recipe ids
+  const slaById = new Map(sla.map(r => [Number(r.ID), r]));
+  for (const r of sla) { const sp = Number(r.Spell); (bySpell.get(sp) || bySpell.set(sp, []).get(sp)).push(Number(r.ID)); }
+  rec.ranks = {};
+  let n = 0;
+  for (const p of rec.professions) {
+    const rows = trainer.professions[p.name]; if (!rows) continue;
+    const byId = new Map(p.recipes.map(r => [r.id, r]));
+    const ranks = (rec.ranks[p.name] = {});
+    for (const [spell, at, cost, rank] of rows) {
+      if (rank) { // rank spells: the one with a learn skill or a fee is the trainer's (others are duplicates)
+        if (["Apprentice", "Journeyman", "Expert", "Artisan"].includes(rank.trim()) && (cost || at < 9999) && ranks[rank.trim()] == null) ranks[rank.trim()] = cost;
+        continue;
+      }
+      for (const id of bySpell.get(spell) || []) {
+        const r = byId.get(id); if (!r) continue;
+        r.train = cost;
+        if (at > 0 && at < 9999) {
+          const f = slaById.get(id), y = Number(f.TrivialSkillLineRankLow), grey = Number(f.TrivialSkillLineRankHigh);
+          r.learn = at; r.yellow = Math.max(y, at); r.green = Math.floor((r.yellow + grey) / 2); r.grey = grey;
+          if (at >= grey) r.noSkill = 1; else delete r.noSkill;
+        }
+        if (r.source !== "auto") r.source = "trainer";
+        delete r.est; delete r.src; r.recipeItems = [];
+        n++;
+      }
+    }
+    p.recipes.sort((a, b) => a.learn - b.learn || a.grey - b.grey);
+  }
+  return n;
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/").replace(/^\//, "")}`) {
@@ -101,5 +140,5 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/").replace(
   console.log("downloading client tables for", rec.build, "and Classic item data");
   const n = addExtras(rec, await loadTables(rec.build));
   await writeFile(file, JSON.stringify(rec));
-  console.log(`${n.withTools} recipes need a tool, ${n.withSource} patterns have a known source`);
+  console.log(`${n.withTools} recipes need a tool, ${n.withSource} patterns have a known source, ${n.trained} trainer recipes priced`);
 }

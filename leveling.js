@@ -50,7 +50,11 @@ function levelCap() {
 // Recipes needing more crafts than this per skill point are skipped while a faster one exists.
 const MAX_CRAFTS_PER_POINT = 3;
 // Stay on the current recipe unless another one is clearly cheaper (fewer, longer steps).
-const STICK = 0.10, STICK_MIN = 50;
+// Switch recipes only when the other one is clearly cheaper: STICK (15%) of its cost per point, and at least
+// stickMin(skill) copper per point, which grows with skill level because everything costs more higher up.
+// A short detour (a recipe usable only a few more points) must also save at least MIN_RUN points' worth in total.
+const STICK = 0.15, MIN_RUN = 5;
+const stickMin = s => 20 + s; // copper per point: 40c at skill 20, 1s 20c at 100, 2s 70c at 250
 // Before the route is known, a pattern's price is spread over this many points.
 const ONCE_SPREAD = 5; // 10%, at least 50 copper per point
 
@@ -104,6 +108,7 @@ function allowed(r) {
 // One-time cost to learn a pattern recipe: the cheapest of the teaching item on the AH, its vendor
 // (Classic price), or free from a quest. Unknown = not listed and no vendor/quest source (cost 0).
 function patternCost(book, r) {
+  if (r.source === "trainer" && r.train) return { cost: r.train, how: "trainer" }; // trainer fee (Wowhead Forever data)
   if (r.source !== "item") return { cost: 0 };
   let best = null;
   for (const id of r.recipeItems) {
@@ -312,6 +317,8 @@ function plan(future = null, usage = null) {
   }
 
   const end = Math.min(300, state.to, levelCap());
+  const rankFees = []; // [{name, cap, fee}] rank training paid along the route (null = not a trainer fee, e.g. a book)
+  if (state.from <= 1 && REC.ranks?.[prof.name]?.Apprentice) total += REC.ranks[prof.name].Apprentice;
   for (let s = Math.max(1, state.from); s < end; ) {
     const ctx = { book, makers, skill: s, inv, hasTool };
     let best = null, bestFast = null, cur = null;
@@ -359,8 +366,16 @@ function plan(future = null, usage = null) {
     if (state.fast && bestFast) best = bestFast;
     // Keep crafting the current recipe unless the best one is clearly cheaper, so the route doesn't
     // switch back and forth for a few copper.
-    if (best && cur && cur !== best && !(state.fast && cur.slow && bestFast)
-      && cur.per <= best.per + Math.max(Math.abs(best.per) * STICK, STICK_MIN)) best = cur;
+    // points a recipe can still be crafted for before it needs more than MAX_CRAFTS_PER_POINT crafts a point
+    const room = rr => Math.max(0, Math.floor(rr.grey - (rr.grey - rr.yellow) / MAX_CRAFTS_PER_POINT) - s);
+    if (best && cur && cur !== best && !(state.fast && cur.slow && bestFast)) {
+      const gain = cur.per - best.per; // saved per skill point by switching
+      const clearlyCheaper = gain > Math.max(Math.abs(best.per) * STICK, stickMin(s));
+      // a short detour has to be worth it in total: what it saves over the points it can be used for
+      // must beat MIN_RUN points of the minimum saving (unless the current recipe is about to run out)
+      const worthIt = room(cur.r) < MIN_RUN || gain * Math.min(room(best.r), MIN_RUN * 4) >= stickMin(s) * MIN_RUN;
+      if (!clearlyCheaper || !worthIt) best = cur;
+    }
     if (!best) {
       // which reagents ran out?
       const miss = new Map();
@@ -391,6 +406,11 @@ function plan(future = null, usage = null) {
     }
     let last = steps[steps.length - 1];
     const rankBreak = last && last.from < s && RANKS.some(k => k.cap === s); // train here: start a new step
+    for (const k of RANKS) if (s >= k.cap && state.from < k.cap && !rankFees.some(f => f.name === k.name)) {
+      const fee = REC.ranks?.[prof.name]?.[k.name];
+      rankFees.push({ name: k.name, cap: k.cap, fee: fee ?? null });
+      if (fee) total += fee;
+    }
     if (!last || last.r !== r || rankBreak) {
       settle(last);
       last = { r, from: s, to: s, crafts: 0, cost: 0, exp: 0, vendor: 0, ah: 0, onAh: 0, pattern: learned.get(r.id), kept: 0, used: new Map(), toolsGot: [], once: 0, patPaid: 0 };
@@ -421,7 +441,8 @@ function plan(future = null, usage = null) {
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
   const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
+  const feeOf = name => rankFees.find(f => f.name === name);
+  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
     usage: steps.reduce((m, st) => m.set(st.r.id, (m.get(st.r.id) || 0) + (st.to - st.from)), new Map()) };
 }
 
@@ -510,7 +531,7 @@ function render() {
       if (trained.has(k.name) || st.from < k.cap || state.from >= k.cap) continue;
       trained.add(k.name);
       train += `<tr class="train"><td class="num rng">${k.cap}</td><td class="c-craft" colspan="${cols - 1}"><b>Train ${k.name} ${esc(prof.name)}</b> before skill ${k.cap}
-        <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(trainerFor(prof.name, k.name))}</span></td></tr>`;
+        <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(trainerFor(prof.name, k.name))}${(f => !f ? "" : f.fee ? ` · fee ${gold(f.fee)}` : " · no trainer fee (book or quest)")(p.feeOf(k.name))}</span></td></tr>`;
     }
     const reag = r.reagents.map(([id, q]) => `${q} × ${wh(id, ITEMS[id]?.n || id)}`).join(", ");
     const pattern = r.source === "item" ? patternText(r, st.pattern) : "";
@@ -530,7 +551,7 @@ function render() {
       <td class="num rng">${st.from}–${st.to}</td>
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${pattern ? ` <span class="tag pat" title="${esc(pattern.replace(/<[^>]+>/g, ""))}">${st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern"}</span>` : ""}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
         toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
-      <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? "pattern " + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
+      <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? (r.source === "trainer" ? "training " : "pattern ") + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${vend}${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;

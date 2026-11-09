@@ -120,9 +120,15 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - vendor,
   - AH (listings are consumed from the order book as they are bought),
   - crafting the intermediate yourself, up to 2 levels deep.
-- **Pattern cost** is spread over about 5 skill points. A time cost per craft is added (default 5s).
+- **One-time costs:** a pattern (AH / vendor price) or a trainer recipe fee (`recipe.train`) is paid once,
+  on the step that first uses it ("incl. pattern / training"), and spread in scoring over the points the
+  recipe got in the first pass (`usage`; 5 before that). Rank fees (`recipes.json` `ranks[prof]`, e.g.
+  Journeyman 5s, Expert 50s, Artisan 5g; Cooking / First Aid higher ranks are books, no fee) are paid
+  when the route reaches 75 / 150 / 225 and shown on the training rows. A time cost per craft is added (default 5s).
 - **Route shape rules** (constants near the top of `leveling.js`):
-  - `STICK` / `STICK_MIN`: stay on the current recipe unless the best one is >10% (≥50c/point) cheaper.
+  - `STICK` (15%) / `stickMin(skill)` (20c + 1c per skill point, per point): switch only when the other
+    recipe saves more than that per point, and (`MIN_RUN` 5) a short detour must save at least five
+    points of that minimum in total. Costs 0–4% vs free switching, for fewer and longer steps.
   - `MAX_CRAFTS_PER_POINT` (3): with "Avoid recipes needing over 3 crafts per point" on, slower
     recipes are skipped while a faster one exists.
 - **Training ranks:** `RANKS` (75/150/225 caps, skill 50/125/200, level 10/20/35). Steps break at each
@@ -213,7 +219,8 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
 ## Known limits
 
 - Launch-week markets are thin. Some leveling routes stop before 300 when the AH runs out of a reagent.
-- Trainer fees are not included.
+- Trainer prices and Forever learn skills come from Wowhead (`data/trainer.json`, applied by
+  `scripts/client-extras.mjs`); refresh that file by hand after a patch.
 - Some vendor prices come from Classic data.
 - AH resale is an estimate:
   - Cancelled listings are counted as sales.
