@@ -265,7 +265,7 @@ function render() {
       : `${rate(e.perDay)}/day${e.guess ? "*" : ""}<small>${n0(e.nListed)} listed${e.supplyDays != null && e.nListed ? ` · ${rate(e.supplyDays)} d` : ""}</small>`;
     return `<tr class="row${open ? " open" : ""}${e.profit <= 0 ? " mm-loss" : ""}" data-id="${r.id}" tabindex="0" aria-expanded="${open}">
       <td><div class="crate"><span class="caret">▸</span><div><b>${wh(e.id, r.name)}</b><div class="meta mm-tags">${tags}</div></div></div></td>
-      <td class="num">${gold(e.sellUnit)}${arrow(e.tr)}<small>${e.toVendor ? "vendor" : e.st.avg != null && e.minList != null && e.st.avg < e.minList ? "sold avg" : e.minList != null ? "cheapest listing" : "sold avg"}</small></td>
+      <td class="num">${gold(e.sellUnit)}${arrow(e.tr)}<small>${e.toVendor ? "vendor price" : `you get · ${e.st.avg != null && e.minList != null && e.st.avg < e.minList ? "sold avg" : e.minList != null ? "listed" : "sold avg"} ${gold(e.today)}`}</small></td>
       <td class="num">${gold(e.cost)}${e.flags.some(f => f[0] === "thin reagents") ? `<small>top ${gold(e.top.cost)}</small>` : ""}</td>
       <td class="num">${pl(e.profit)}<small>${e.cost > 0 ? pct(e.margin) + " margin" : ""}</small></td>
       <td class="num">${market}</td>
