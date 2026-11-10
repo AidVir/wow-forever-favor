@@ -88,7 +88,7 @@ export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
       if (best) {
         const s = best.source;
         r.src = s.category === "Vendor" ? { k: "vendor", npc: s.name, cost: s.cost ?? best.buyPrice ?? null, faction: s.faction || "Both", item: best.itemId }
-          : s.category === "Quest" ? { k: "quest", quest: s.quests?.[0]?.name || "a quest", item: best.itemId }
+          : s.category === "Quest" ? { k: "quest", quest: s.quests?.[0]?.name || "a quest", faction: questFaction(s.quests), item: best.itemId }
           : { k: "drop", from: s.name || null, item: best.itemId };
         withSource++;
       } else if (r.isNew) r.src = { k: "new" }; // Forever-only pattern: not in Classic data (many come from Merchant's Favor vendors)
@@ -100,6 +100,9 @@ export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
 }
 
 // Training cost + Forever learn skill per trainer recipe, and rank fees per profession.
+// A pattern's quests are faction-only when every quest giving it is for the same faction.
+export const questFaction = qs => { const f = [...new Set((qs || []).map(q => q.faction || "Both"))]; return f.length === 1 ? f[0] : "Both"; };
+
 export function applyTrainer(rec, sla, trainer = JSON.parse(readFileSync(new URL("../data/trainer.json", import.meta.url), "utf8"))) {
   const bySpell = new Map(); // spell id -> recipe ids
   const slaById = new Map(sla.map(r => [Number(r.ID), r]));

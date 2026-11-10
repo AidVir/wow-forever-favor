@@ -237,6 +237,8 @@ demand models (`leveling.js` still has its own copies and could switch to them).
 - **Sell price:** min(cheapest listing, average sold) on the faction AH, projected `SELL_DAYS` (1) ahead
   when falling (flag `price falling` at −5%/day; `supply rising` at +50% listed in 24 h), × 0.95, minus a lost deposit of
   15% of vendor sell price (×2 when oversupplied); the vendor price if higher. Blackwater only for buying.
+- **Faction patterns:** `recipe.src.faction` (vendor and quest sources, "Both" / "Alliance" / "Horde"). On both
+  pages `otherFaction(r)` patterns are usable only when listed on the AH (vendor / quest price ignored).
 - **Reagent cost:** walks the order book for a whole day's crafts; crafts intermediates when cheaper;
   "I gather my own" values reagents at AH sell value (or 0). Crafts/day are capped by AH reagent supply.
 - **Demand:** sales/day × share; share shrinks above 2 days of supply, flagged oversupplied above 3.

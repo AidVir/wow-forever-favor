@@ -65,10 +65,13 @@ function myProfs() {
   const picked = Object.entries(state.profs).filter(([, s]) => s > 0);
   return picked.length ? new Map(picked) : new Map(REC.professions.map(p => [p.name, 300]));
 }
+// A pattern whose vendor or quest is only for the other faction can only be bought on the AH.
+const otherFaction = r => { const f = r.src?.faction; return !!f && f !== "Both" && f.toLowerCase() !== state.faction; };
 function patternCost(book, r) {
   if (r.source !== "item") return null;
   let best = null;
-  for (const id of r.recipeItems) for (const c of [minPrice(book, id), ITEMS[id]?.v]) if (c != null && (!best || c < best.cost)) best = { cost: c, id };
+  const vendorOk = !otherFaction(r);
+  for (const id of r.recipeItems) for (const c of [minPrice(book, id), vendorOk ? ITEMS[id]?.v : null]) if (c != null && (!best || c < best.cost)) best = { cost: c, id };
   return best || { cost: null, unknown: true };
 }
 function usable(r, profs, book) {
@@ -76,6 +79,7 @@ function usable(r, profs, book) {
   if (r.needs && RARE_STATIONS.has(r.needs) && !state.rare) return "station";
   if (r.source === "item") {
     if (state.patterns === "trainer") return "pattern";
+    if (otherFaction(r) && patternCost(book, r).unknown) return "faction";
     if (state.patterns === "buyable" && patternCost(book, r).unknown) return "pattern";
   }
   return null;
@@ -169,7 +173,7 @@ function compute() {
   };
   const ctx = { book, makers, items: ITEMS, can: () => true, own: id => state.own.has(gatherKind(id)) ? ownUnit(id) : null };
   const env = { book, sellBook, sales, ctx, timeCost: Math.max(0, state.time) * 100 };
-  const hidden = { enchant: 0, skill: 0, station: 0, pattern: 0, nomarket: 0, noreagents: 0, risky: 0, low: 0, loss: 0 };
+  const hidden = { enchant: 0, skill: 0, station: 0, pattern: 0, faction: 0, nomarket: 0, noreagents: 0, risky: 0, low: 0, loss: 0 };
   const rows = [];
   for (const r of recipes) {
     if (!profs.has(r.prof)) continue;
@@ -283,6 +287,7 @@ function render() {
   if (hidden.noreagents) h.push(`${hidden.noreagents} with reagents not available right now`);
   if (hidden.station) h.push(`${hidden.station} need a rare station`);
   if (hidden.pattern) h.push(`${hidden.pattern} need a pattern you excluded`);
+  if (hidden.faction) h.push(`${hidden.faction} need a pattern only the other faction can buy (none on the AH now)`);
   if (hidden.skill) h.push(`${hidden.skill} above your skill`);
   if (hidden.enchant) h.push(`${hidden.enchant} enchantments (can't be sold)`);
   $("#hidden").innerHTML = h.length ? `Hidden: ${h.join(" · ")}.` : "";

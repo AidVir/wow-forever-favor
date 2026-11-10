@@ -100,11 +100,14 @@ function allowed(r) {
   if (r.needs && state.stationsOff.has(r.needs)) return false;
   if (r.source === "item") {
     if (state.patterns === "trainer") return false;
-    if (state.patterns === "vendor" && !["vendor", "quest"].includes(r.src?.k)) return false;
+    if (otherFaction(r) && patternCost(BOOK0, r).unknown) return false; // other faction's vendor / quest, not on the AH
+    if (state.patterns === "vendor" && (!["vendor", "quest"].includes(r.src?.k) || otherFaction(r))) return false;
     if (state.patterns === "buyable" && patternCost(BOOK0, r).unknown) return false;
   }
   return true;
 }
+// A pattern whose vendor or quest is only for the other faction can only be bought on the AH.
+const otherFaction = r => { const f = r.src?.faction; return !!f && f !== "Both" && f.toLowerCase() !== state.faction; };
 // One-time cost to learn a pattern recipe: the cheapest of the teaching item on the AH, its vendor
 // (Classic price), or free from a quest. Unknown = not listed and no vendor/quest source (cost 0).
 function patternCost(book, r) {
@@ -116,8 +119,8 @@ function patternCost(book, r) {
     if (p != null && (!best || p < best.cost)) best = { cost: p, id, how: "ah" };
   }
   const s = r.src;
-  if (s?.k === "vendor" && s.cost != null && (!best || s.cost < best.cost)) best = { cost: s.cost, how: "vendor" };
-  if (s?.k === "quest" && !best) best = { cost: 0, how: "quest" };
+  if (s?.k === "vendor" && s.cost != null && !otherFaction(r) && (!best || s.cost < best.cost)) best = { cost: s.cost, how: "vendor" };
+  if (s?.k === "quest" && !otherFaction(r) && !best) best = { cost: 0, how: "quest" };
   return best || { cost: 0, unknown: true };
 }
 // Where a pattern comes from, for the step's tag and details.
