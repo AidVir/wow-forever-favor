@@ -1,5 +1,5 @@
 import { $, store, esc, gold, makeBook, buyCost, consume, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, marketTrend, projectPrice, trendLabel } from "./common.js";
-import { FISH_SECONDS, catchChance, catchesPerPoint, spotYield, lureOptions, openSpots, seasonFish } from "./fishing.js";
+import { FISH_SECONDS, catchChance, catchesPerPoint, spotYield, lureOptions, openSpots, seasonFish, sameCatch, sameCatchText } from "./fishing.js";
 
 const RARE_STATIONS = new Set(["Black Anvil", "Black Forge", "Arcane Forge", "Moonwell", "Icebellow Anvil", "Master Forge", "Anarchist's Workbench"]);
 const state = {
@@ -670,9 +670,8 @@ function renderFish(p) {
   const rankRow = k => `<tr class="train"><td class="num rng">${k.at}</td><td colspan="5"><b>${k.name} Fishing</b> before skill ${k.at} <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(k.how)}${k.cost ? ` · ${gold(k.cost)}` : k.quest ? " · free" : ""}</span></td></tr>`;
   const done = new Set();
   // other spots with exactly the same catch at the same skill: fish whichever is convenient
-  const keyOf = x => x.base + "|" + JSON.stringify(x.fish) + "|" + x.seasonal;
   const open = openSpots(FISH, state.faction, state.level);
-  const sameAs = sp => open.filter(x => x !== sp && keyOf(x) === keyOf(sp)).sort((a, b) => a.levels[0] - b.levels[0]);
+
   $("#fishSteps").innerHTML = f.steps.map(st => {
     let pre = "";
     for (const k of f.ranks) if (!done.has(k.name) && st.from >= k.at) { done.add(k.name); pre += rankRow(k); }
@@ -685,7 +684,7 @@ function renderFish(p) {
     return pre + `<tr><td class="num rng">${st.from}–${st.to}</td>
       <td><b>${esc(sp.name)}</b> <span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span> ${lure}${kept ? `<span class="tag keep">keep ${kept} for cooking</span>` : ""}
         <div class="meta">${away || awayEnd ? `${away === awayEnd ? away : `${away}→${awayEnd}`}% get away · ` : ""}none get away at ${sp.full}</div>
-        <div class="meta">${top}</div>${(o => o.length ? `<div class="meta">Same catch: ${o.map(x => `${esc(x.name)} (${x.levels[0]}–${x.levels[1]})`).join(", ")}</div>` : "")(sameAs(sp))}</td>
+        <div class="meta">${top}</div>${(o => o.length ? `<div class="meta">Same catch: ${sameCatchText(FISH, ITEMS, o, esc)}</div>` : "")(sameCatch(open, sp))}</td>
       <td class="num">${Math.round(st.catches).toLocaleString("en-GB")}<small>${Math.round(st.casts).toLocaleString("en-GB")} casts</small></td>
       <td class="num">${hrs(st.hours)}</td>
       <td class="num">${st.lureCost ? gold(st.lureCost) : "—"}${st.lures ? `<small>${st.lures} × ${st.o.lure.mins} min</small>` : ""}</td>

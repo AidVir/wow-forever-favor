@@ -51,3 +51,13 @@ export function openSpots(F, faction, level = 60) {
   return F.spots.filter(s => (!s.faction || s.faction === faction) && s.levels[0] <= level).sort((a, b) => a.levels[0] - b.levels[0]);
 }
 export const fishName = (F, ITEMS, id) => ITEMS?.[id]?.n || F.items[id]?.n || String(id);
+// Other spots that catch the same fish at the same skill. `seasonal` says whether the seasonal fish
+// (Winter Squid / Summer Bass) differs: true = same; otherwise "with" or "without" it.
+export function sameCatch(spots, sp) {
+  const key = x => x.base + "|" + JSON.stringify(x.fish);
+  return spots.filter(x => x !== sp && key(x) === key(sp)).sort((a, b) => a.levels[0] - b.levels[0])
+    .map(x => ({ spot: x, seasonal: x.seasonal === sp.seasonal ? true : x.seasonal > sp.seasonal ? "with" : "without" }));
+}
+// "Felwood (48–55, without Winter Squid), …"
+export const sameCatchText = (F, ITEMS, list, esc) => list.map(({ spot, seasonal }) =>
+  `${esc(spot.name)} (${spot.levels[0]}–${spot.levels[1]}${seasonal === true ? "" : `, ${seasonal} ${fishName(F, ITEMS, seasonFish())}`})`).join(", ");

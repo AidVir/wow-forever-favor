@@ -1,5 +1,5 @@
 import { $, store, esc, gold, makeBook, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, acquire, salesStats, marketTrend, projectPrice } from "./common.js";
-import { FISH_SECONDS, catchChance, spotYield, lureOptions, openSpots } from "./fishing.js";
+import { FISH_SECONDS, catchChance, spotYield, lureOptions, openSpots, sameCatch, sameCatchText } from "./fishing.js";
 
 // --- rules (explained on the page under "How this is calculated") -------------------------
 const AH_CUT = 0.95;          // the AH keeps 5% of the sale price
@@ -430,6 +430,7 @@ function renderFish(res) {
   $("#fishRows").innerHTML = f.rows.slice(0, 40).map((e, i) => {
     const sp = e.sp, open = state.fishOpen.has(sp.name);
     const others = e.spots.slice(1);
+    const similar = sameCatch(openSpots(FISH, state.faction, state.level), sp); // incl. spots that differ only in the seasonal fish
     const away = Math.round((1 - e.p) * 100);
     const top = e.items.filter(x => x.value > 0).slice(0, 3).map(x => `${esc(ITEMS[x.id]?.n || x.id)}`).join(", ");
     const ah = e.items.reduce((a, x) => a + x.parts.filter(p => p.how === "AH").reduce((b, p) => b + p.units, 0), 0);
@@ -438,7 +439,7 @@ function renderFish(res) {
     const how = [ah >= 1 ? `${n0(ah)} AH` : "", cooked >= 1 ? `${n0(cooked)} cooked` : "", vend >= 1 ? `${n0(vend)} vendor` : ""].filter(Boolean).join(" · ");
     const key = sp.name;
     return `<tr class="row${open ? " open" : ""}" data-fish="${esc(key)}" tabindex="0" aria-expanded="${open}">
-      <td><div class="crate"><span class="caret">▸</span><div><b>${esc(sp.name)}</b>${others.length ? ` <small class="muted">or ${others.length} more</small>` : ""}<div class="meta mm-tags"><span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span>${e.o.lure ? ` <span class="tag toolget">${esc(ITEMS[e.o.lure.id]?.n || "lure")} (+${e.o.bonus})</span>` : ""}${away ? ` <span class="mm-flag warn">${away}% get away</span>` : ""}</div><div class="meta">${top}</div>${others.length ? `<div class="meta">Same catch: ${others.map(o => `${esc(o.name)} (${o.levels[0]}–${o.levels[1]})`).join(", ")}</div>` : ""}</div></div></td>
+      <td><div class="crate"><span class="caret">▸</span><div><b>${esc(sp.name)}</b>${others.length ? ` <small class="muted">or ${others.length} more</small>` : ""}<div class="meta mm-tags"><span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span>${e.o.lure ? ` <span class="tag toolget">${esc(ITEMS[e.o.lure.id]?.n || "lure")} (+${e.o.bonus})</span>` : ""}${away ? ` <span class="mm-flag warn">${away}% get away</span>` : ""}</div><div class="meta">${top}</div>${similar.length ? `<div class="meta">Same catch: ${sameCatchText(FISH, ITEMS, similar, esc)}</div>` : ""}</div></div></td>
       <td class="num">${n0(e.catches)}<small>${Math.round(e.p * 100)}% catch</small></td>
       <td class="num">${how || "—"}</td>
       <td class="num">${e.lure ? gold(e.lure) : "—"}</td>
