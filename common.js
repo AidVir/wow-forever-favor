@@ -80,11 +80,11 @@ export const wh = (id, text) => `<a href="https://www.wowhead.com/forever/item=$
 // Cheapest way to get `qty` of an item right now: vendor (unlimited), AH (walks the order book for
 // the whole quantity, it does not consume it), or crafting it from a recipe ctx.can(r) allows, up to
 // 2 levels deep. ctx = { book, makers: Map(itemId -> recipes), items: recipes.json items,
-// can(recipe) -> bool, own?(itemId) -> unit cost or null (reagents you gather yourself) }.
+// can(recipe) -> bool, own?(itemId, qty) -> unit cost or null (reagents you gather yourself) }.
 // Returns { cost, plan: [[kind, id, qty]] } with kind "ah" | "vendor" | "craft" (id = recipe id) | "own",
 // or null when the item can't be had.
 export function acquire(ctx, id, qty, depth = 0) {
-  const own = ctx.own?.(id);
+  const own = ctx.own?.(id, qty);
   if (own != null) return { cost: own * qty, plan: [["own", id, qty]] };
   const it = ctx.items[id];
   let best = null;

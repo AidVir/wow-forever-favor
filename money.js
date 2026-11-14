@@ -286,12 +286,17 @@ function compute() {
   const recipes = REC.professions.flatMap(p => p.recipes);
   const makers = new Map();
   for (const r of recipes) if (r.item && !usable(r, profs, book)) (makers.get(r.item) || makers.set(r.item, []).get(r.item)).push(r);
-  const ownUnit = id => {
+  // What your own gathered units would have earned instead: the AH (after cut, deposit and a falling price) for
+  // as many as the market takes a day at your share, the vendor for the rest. Selling 8,000 raw fish a day at
+  // the cheapest listing isn't possible, so a day's worth of reagents is mostly worth the vendor price.
+  const ownUnit = (id, qty) => {
     if (state.ownMode === "free") return 0;
-    const p = minPrice(sellBook, id);
-    return p != null ? Math.floor(p * AH_CUT) : ITEMS[id]?.s || 0;
+    const m = sellModel(id, env);
+    if (m.net == null || m.net <= m.vend) return m.vend;
+    const k = Math.min(qty, m.demand);
+    return (k * m.net + (qty - k) * m.vend) / qty;
   };
-  const ctx = { book, makers, items: ITEMS, can: () => true, own: id => state.own.has(gatherKind(id)) ? ownUnit(id) : null };
+  const ctx = { book, makers, items: ITEMS, can: () => true, own: (id, qty = 1) => state.own.has(gatherKind(id)) ? ownUnit(id, Math.max(1, qty)) : null };
   const env = { book, sellBook, sales, ctx, timeCost: Math.max(0, state.time) * 100 };
   const hidden = { enchant: 0, skill: 0, station: 0, pattern: 0, faction: 0, nomarket: 0, noreagents: 0, risky: 0, low: 0, loss: 0 };
   const rows = [];
@@ -318,7 +323,7 @@ function sourceText(p, part, n) {
   const [kind, id] = p.plan[0];
   if (kind === "ah") return `AH · ${gold(part.cost / part.q)} each for ${n0(part.q * n)}`;
   if (kind === "vendor") return "vendor";
-  if (kind === "own") return state.ownMode === "free" ? "own · free" : "own · valued at AH sell price";
+  if (kind === "own") return state.ownMode === "free" ? "own · free" : "own · valued at what selling them would get (AH up to demand, then vendor)";
   if (kind === "craft") return `craft · ${esc(RECIPE.get(id)?.name || "recipe")}`;
   return kind;
 }

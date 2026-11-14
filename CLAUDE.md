@@ -291,7 +291,8 @@ demand models (`leveling.js` still has its own copies and could switch to them).
 - **Faction patterns:** `recipe.src.faction` (vendor and quest sources, "Both" / "Alliance" / "Horde"). On both
   pages `otherFaction(r)` patterns are usable only when listed on the AH (vendor / quest price ignored).
 - **Reagent cost:** walks the order book for a whole day's crafts; crafts intermediates when cheaper;
-  "I gather my own" values reagents at AH sell value (or 0). Crafts/day are capped by AH reagent supply.
+  "I gather my own" values reagents at what selling them would get: AH net up to `sellModel` demand, vendor
+  for the rest (`ctx.own(id, qty)`), or 0. Crafts/day are capped by AH reagent supply.
 - **Demand:** sales/day × share; share shrinks above 2 days of supply, flagged oversupplied above 3.
   Before 6 h of history: a quarter of listed units per day, marked `guess`.
 - **Flags:** `risk` (few sales, one listing, price spike >1.5×) hides the row unless "Show unreliable
