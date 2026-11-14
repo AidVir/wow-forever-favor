@@ -18,6 +18,33 @@ import { parseCsv } from "./learn-levels.mjs";
 import { readFileSync } from "node:fs";
 
 // Tools sold by ordinary trade / profession supply vendors (everything else must be crafted or bought on the AH).
+// Cooking recipes sold by cooking-supply vendors in both factions' towns that Classic item data lists without a
+// source. Vendors from the wow-professions.com WoW Forever cooking and fishing + cooking guides; price = vendor price.
+export const VENDOR_RECIPES = {
+  6325: "Harn Longcast (Mulgore), Lizbeth Cromwell (Undercity), Gretta Ganter (Dun Morogh), Tharynn Bouden (Elwynn Forest)", // Brilliant Smallfish
+  6326: "Zansoa (Durotar) and other cooking-supply vendors", // Slitherskin Mackerel
+  6328: "Tharynn Bouden (Elwynn Forest), Lizbeth Cromwell (Undercity)", // Longjaw Mud Snapper
+  6368: "Zansoa (Durotar), Shankys (Darkshore)", // Rainbow Fin Albacore
+  6330: "Naal Mistrunner (Thunder Bluff), Ronald Burch (Undercity), Catherine Leland (Stormwind), Kilxx (Ratchet)", // Bristle Whisker Catfish
+  6369: "Kilxx (Ratchet), Shankys (Darkshore)", // Rockscale Cod
+  17062: "Kelsey Yance (Booty Bay), Wik'Tar, Shankys, Lizbeth Cromwell and others", // Mithril Head Trout
+  6892: "Andrew Hilbert (Silverpine Forest), Drac Roughcut (Loch Modan)", // Smoked Bear Meat
+  13947: "Sheendra Tallgrass (Camp Mojache) / Vivianna (Feathermoon), Feralas", // Lobster Stew
+  13948: "Sheendra Tallgrass (Camp Mojache) / Vivianna (Feathermoon), Feralas", // Mightfish Steak
+  13949: "Sheendra Tallgrass (Camp Mojache) / Vivianna (Feathermoon), Feralas", // Baked Salmon
+};
+export function applyVendorRecipes(rec) {
+  let n = 0;
+  for (const p of rec.professions) for (const r of p.recipes) {
+    if (r.source !== "item" || r.src?.k === "vendor") continue;
+    const id = r.recipeItems.find(i => VENDOR_RECIPES[i]);
+    if (!id) continue;
+    r.src = { k: "vendor", npc: VENDOR_RECIPES[id], cost: rec.items[id]?.v ?? null, faction: "Both", item: id };
+    n++;
+  }
+  return n;
+}
+
 export const VENDOR_TOOLS = new Set([5956 /* Blacksmith Hammer */, 2901 /* Mining Pick */, 7005 /* Skinning Knife */, 4471 /* Flint and Tinder */]);
 const IGNORE_CATEGORIES = new Set([12 /* Philosopher's Stone: transmutes, excluded anyway */]);
 
@@ -96,6 +123,7 @@ export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
   }
   rec.tools = tools;
   const trained = applyTrainer(rec, sla);
+  applyVendorRecipes(rec);
   return { withTools, withSource, trained };
 }
 

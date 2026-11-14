@@ -83,6 +83,7 @@
           <label><input type="checkbox" data-own="ore"> Ore, stone &amp; gems</label>
           <label><input type="checkbox" data-own="leather"> Leather, hides &amp; scales</label>
           <label><input type="checkbox" data-own="cloth"> Cloth</label>
+          <label><input type="checkbox" data-own="fish"> Fish</label>
         </fieldset>
         <div class="ctl">
           <label for="patterns">Recipes I can use</label>
@@ -126,6 +127,43 @@
     <p class="hint" id="hidden"></p>
   </section>
 
+  <section class="panel" aria-label="Fishing spots" id="fishPanel" hidden>
+    <div class="panel-head">
+      <div><h2>Fishing spots</h2><p>Where your fishing skill makes the most gold per hour, selling the catch on the AH up to your share of demand, cooking it when the dish pays more, and vendoring the rest.</p></div>
+    </div>
+    <div class="controls">
+      <div class="ctl"><label for="fishhours">Hours fishing per day</label><input id="fishhours" type="number" min="0.25" max="24" step="0.5" value="2"></div>
+      <div class="ctl"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
+      <div class="ctl">
+        <label for="pole">Fishing pole</label>
+        <select id="pole">
+          <option value="0">Fishing Pole (+0)</option>
+          <option value="5">Strong Fishing Pole (+5)</option>
+          <option value="20">Big Iron Fishing Pole (+20)</option>
+          <option value="25">Nat Pagle's Extreme Angler FC-5000 (+25)</option>
+          <option value="35">Arcanite Fishing Pole (+35)</option>
+        </select>
+      </div>
+      <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60"></div>
+      <div class="ctl"><span class="lbl">Cooking</span><label class="chk"><input id="fishcook" type="checkbox" checked> Cook the catch when the dish pays more</label></div>
+    </div>
+    <div class="plan-sum" id="fishSummary" aria-live="polite"></div>
+    <div class="table-scroll">
+      <table class="mm fishspots">
+        <thead><tr>
+          <th>Spot · tap for details</th>
+          <th class="num" title="Fish caught per day at your hours, and the share of casts that catch something">Catch / day</th>
+          <th class="num" title="How the day's catch is sold: AH (within your share of demand), cooked, vendor">Sold as</th>
+          <th class="num" title="Lures used per day">Lures / day</th>
+          <th class="num">Gold / hour</th>
+          <th class="num">Gold / day</th>
+        </tr></thead>
+        <tbody id="fishRows"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="fishHidden"></p>
+  </section>
+
   <details class="explain mm-how">
     <summary>How this is calculated</summary>
     <p><b>Sell price.</b> The lower of the cheapest listing on your faction's AH and the average price units actually sold at (from the hourly sales tracker), minus the 5% AH cut. Prices move while you sell: when an item's price is falling, it is projected one day ahead. The bot tracks a market price (the average of the cheapest 10% of listed units, so one cheap listing can't fake a crash); until it has 24 h of that history the trend comes from sold prices, counted at half. A rising price is never projected. If that is below the vendor sell price, the item is valued at vendor price instead and flagged <i>vendor it</i>. You sell on your own faction's AH; Blackwater is only used to buy reagents.</p>
@@ -137,6 +175,9 @@
     <p><b>Sales per day</b> come from listings that vanished between hourly snapshots before they could expire (cancelled listings look the same, so this can overstate demand a little). <b>Days of supply</b> = units listed ÷ units sold per day. With more than 2 days of supply on the AH your share shrinks in proportion (others are ahead of you in the queue); above 3 days the market is flagged <i>oversupplied</i>.</p>
     <p><b>You sell per day</b> = sales per day × your share. <b>Profit per day</b> = profit per craft × crafts you can sell per day. This is what the list is ranked by: a big margin on something that sells once a week is worth less than a small one that sells fifty times a day.</p>
     <p><b>Before 6 hours of sales history</b> there is no measured rate yet, so demand is guessed as a quarter of the units listed now, per day. Those rows are marked <i>guess</i>.</p>
+    <h3>Fishing</h3>
+    <p>Tick <i>Fishing</i> under your professions to rank fishing spots. A cast catches something with chance (your skill + pole + lure − the spot's base skill + 5)%; nothing bites below the base skill, and nothing gets away from base + 95. Each spot catches its own mix of fish (Classic server tables, which WoW Forever's zone thresholds match), averaged over day and night; Winter Squid or Summer Bass depend on the season. For each spot the best lure is picked: it counts only when the extra catches pay for it.</p>
+    <p>Each fish goes to its best outlet first: the AH up to your share of its measured daily sales (after the cut, a falling price and a lost deposit, as for crafts), then cooked into a dish you can make and sold on the AH up to the dish's demand or vendored (minus the dish's other reagents and your time value per craft), then the vendor. Tick <i>Fish</i> under <i>I gather my own</i> to have the craft list cook your own fish, valued at what selling them raw would pay. Schools (pools), Forever's fishing camp objects and travel time aren't modelled.</p>
     <h3>Reliability flags</h3>
     <p><i>few sales</i> (fewer units sold than your minimum), <i>one listing</i> (the price rests on one listing and nothing sold) and <i>price spike</i> (the recent price is over 1.5× the earlier average, which can mean manipulation) are hidden unless you tick <i>Show unreliable markets</i>. <i>thin reagents</i> (a day's reagents cost 15%+ more than the top listings), <i>oversupplied</i>, <i>reagent supply</i>, <i>price falling</i> (down 5%+ a day) and <i>supply rising</i> (50%+ more listed than 24 h ago: others are making it too) are shown as warnings. Arrows next to a price show its trend where there is history.</p>
     <h3>Patterns, stations and what's left out</h3>

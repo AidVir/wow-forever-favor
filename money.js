@@ -1,4 +1,5 @@
 import { $, store, esc, gold, makeBook, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, acquire, salesStats, marketTrend, projectPrice } from "./common.js";
+import { FISH_SECONDS, catchChance, spotYield, lureOptions, openSpots } from "./fishing.js";
 
 // --- rules (explained on the page under "How this is calculated") -------------------------
 const AH_CUT = 0.95;          // the AH keeps 5% of the sale price
@@ -22,8 +23,10 @@ const RARE_STATIONS = new Set(["Black Anvil", "Black Forge", "Arcane Forge", "Mo
 const HERBS = new Set([2447, 765, 2449, 785, 2450, 2452, 2453, 3355, 3356, 3357, 3358, 3369, 3818, 3819, 3820, 3821, 4625, 8153, 8831, 8836, 8838, 8839, 8845, 8846, 13463, 13464, 13465, 13466, 13467, 13468, 19726, 248821, 248822, 248823, 249274, 249399, 249424]);
 const STONES_GEMS = new Set([2835, 2836, 2838, 7912, 12365, 774, 818, 1206, 1210, 1529, 1705, 3864, 7909, 7910, 12361, 12364, 12799, 12800]);
 const CLOTH = new Set([2589, 2592, 4306, 4338, 14047, 14256]);
+let FISH = null, FISHED = new Set(); // data/fishing.json; item ids that fishing catches
 function gatherKind(id) {
   const n = ITEMS[id]?.n || "";
+  if (FISHED.has(+id)) return "fish";
   if (HERBS.has(+id)) return "herb";
   if (STONES_GEMS.has(+id) || / Ore$/.test(n)) return "ore";
   if (CLOTH.has(+id)) return "cloth";
@@ -51,6 +54,13 @@ const state = {
   risky: store.get("mm:risky", false),
   all: store.get("mm:all", false),
   open: new Set(),
+  // fishing spots
+  fishHours: num(store.get("mm:fishHours", 2), 2),
+  castSec: num(store.get("mm:castSec", FISH_SECONDS), FISH_SECONDS),
+  pole: num(store.get("mm:pole", 0), 0),
+  level: num(store.get("mm:level", 60), 60),
+  fishCook: store.get("mm:fishCook", true),
+  fishOpen: new Set(),
 };
 let PRICES, REC, ITEMS, SALES = null, RECIPE = new Map(), loadedAt = 0;
 
@@ -63,7 +73,7 @@ const pct = x => !isFinite(x) ? "∞" : `${Math.round(x * 100)}%`;
 // Which professions count: the ones ticked, or all at 300 when none are.
 function myProfs() {
   const picked = Object.entries(state.profs).filter(([, s]) => s > 0);
-  return picked.length ? new Map(picked) : new Map(REC.professions.map(p => [p.name, 300]));
+  return picked.length ? new Map(picked) : new Map([...REC.professions.map(p => [p.name, 300]), ["Fishing", 300]]);
 }
 // A pattern whose vendor or quest is only for the other faction can only be bought on the AH.
 const otherFaction = r => { const f = r.src?.faction; return !!f && f !== "Both" && f.toLowerCase() !== state.faction; };
@@ -158,6 +168,96 @@ function evaluate(r, env) {
     crafts, n, top, deep, cost, profit, margin, daily, tr, pat, flags, risky, supplyCap };
 }
 
+// --- fishing spots ------------------------------------------------------------------------------
+// What a unit sells for on your faction's AH after a falling price, the cut and a lost deposit, and how many a
+// day you can sell at your share (the same rules as crafts). net null = no AH price.
+function sellModel(id, env) {
+  const it = ITEMS[id] || {}, st = env.sales.stat(id);
+  const minList = minPrice(env.sellBook, id), nListed = listed(env.sellBook, id);
+  const vend = it.s > 0 ? it.s : 0;
+  if (minList == null && st.avg == null) return { net: null, vend, demand: 0 };
+  const tr = trend(id);
+  const today = minList != null && st.avg != null ? Math.min(minList, st.avg) : (minList ?? st.avg);
+  const gross = projectPrice(today, tr, SELL_DAYS);
+  const guess = !env.sales.ok;
+  const perDay = guess ? nListed * GUESS_ABSORB : st.perDay;
+  const supplyDays = guess ? null : perDay > 0 ? nListed / perDay : nListed > 0 ? Infinity : 0;
+  const over = supplyDays != null && supplyDays > OVER_DAYS;
+  const net = Math.floor(gross * AH_CUT) - (vend ? Math.round(vend * DEPOSIT) * (over ? 2 : 1) : 0);
+  let share = state.share;
+  if (supplyDays != null && supplyDays > CROWD_DAYS) share *= CROWD_DAYS / supplyDays;
+  const unreliable = !guess && st.units < state.minSales && !state.risky;
+  return { net, vend, demand: unreliable ? 0 : perDay * share, today, tr, guess, perDay, nListed, unreliable };
+}
+// Ways to turn one fish into money, best first: sell raw on the AH (up to demand), cook it and sell the dish
+// on the AH (up to the dish's demand), cook and vendor the dish, or vendor it raw. Cooking costs the other
+// reagents and your time value per craft.
+function fishOutlets(id, env, cookers) {
+  const outs = [];
+  const raw = sellModel(id, env);
+  if (raw.net != null && raw.net > raw.vend && raw.demand > 0) outs.push({ how: "AH", unit: raw.net, cap: raw.demand, m: raw });
+  for (const c of cookers.get(id) || []) {
+    const dish = sellModel(c.r.item, env);
+    const per = (u, qty) => (u * c.r.qty - c.other - env.timeCost) / c.fishQty;
+    if (dish.net != null && dish.net > dish.vend && dish.demand > 0) outs.push({ how: "cook", r: c.r, unit: per(dish.net), cap: dish.demand / c.r.qty * c.fishQty, m: dish });
+    if (dish.vend) outs.push({ how: "cook-vendor", r: c.r, unit: per(dish.vend), cap: Infinity });
+  }
+  outs.push({ how: "vendor", unit: raw.vend, cap: Infinity });
+  return outs.filter(o => o.unit > 0 || o.how === "vendor").sort((a, b) => b.unit - a.unit);
+}
+function fishCompute(res) {
+  const skill = res.profs.get("Fishing");
+  if (!skill || !FISH) return null;
+  const env = { book: res.book, sellBook: res.sellBook, sales: res.sales, timeCost: Math.max(0, state.time) * 100 };
+  // cooking recipes you can make that use a fish (other reagents bought at today's prices)
+  const cookers = new Map();
+  if (state.fishCook && res.profs.has("Cooking")) {
+    for (const p of REC.professions) if (p.name === "Cooking") for (const r of p.recipes) {
+      if (!r.item || usable(r, res.profs, res.book)) continue;
+      const fishR = r.reagents.find(([id]) => FISHED.has(id));
+      if (!fishR) continue;
+      let other = 0, ok = true;
+      for (const [id, q] of r.reagents) {
+        if (id === fishR[0]) continue;
+        const a = acquire(res.ctx, id, q);
+        if (!a) { ok = false; break; }
+        other += a.cost;
+      }
+      if (ok) (cookers.get(fishR[0]) || cookers.set(fishR[0], []).get(fishR[0])).push({ r, fishQty: fishR[1], other });
+    }
+  }
+  const hours = Math.max(0.25, state.fishHours), sec = Math.max(5, state.castSec);
+  const outlets = new Map();
+  const outOf = id => outlets.get(id) || outlets.set(id, fishOutlets(id, env, cookers)).get(id);
+  const rows = []; let tooLow = 0;
+  for (const sp of openSpots(FISH, state.faction, state.level)) {
+    const yieldPer = spotYield(sp);
+    let best = null;
+    for (const o of lureOptions(FISH, res.book, skill)) {
+      const p = catchChance(sp, skill + state.pole + o.bonus);
+      if (p <= 0) continue;
+      const catches = 3600 / sec * p * hours; // per day
+      const items = []; let gross = 0;
+      for (const [id, n] of yieldPer) {
+        let left = n * catches; const parts = [];
+        for (const out of outOf(id)) {
+          if (left <= 0) break;
+          const k = Math.min(left, out.cap);
+          if (k <= 0) continue;
+          parts.push({ ...out, units: k }); gross += k * out.unit; left -= k;
+        }
+        items.push({ id, units: n * catches, parts, value: parts.reduce((a, x) => a + x.units * x.unit, 0) });
+      }
+      const lure = o.perHour * hours;
+      const daily = gross - lure;
+      if (!best || daily > best.daily) best = { sp, o, p, catches, items: items.sort((a, b) => b.value - a.value), gross, lure, daily, perHour: daily / hours };
+    }
+    if (best) rows.push(best); else tooLow++;
+  }
+  rows.sort((a, b) => b.daily - a.daily);
+  return { rows, tooLow, skill, hours, cooking: cookers.size > 0 };
+}
+
 function compute() {
   const book = makeBook(PRICES, state.faction, state.neutral);
   const sellBook = makeBook(PRICES, state.faction, false);
@@ -176,7 +276,7 @@ function compute() {
   const hidden = { enchant: 0, skill: 0, station: 0, pattern: 0, faction: 0, nomarket: 0, noreagents: 0, risky: 0, low: 0, loss: 0 };
   const rows = [];
   for (const r of recipes) {
-    if (!profs.has(r.prof)) continue;
+    if (!profs.has(r.prof) || !r.prof) continue;
     const why = usable(r, profs, book);
     if (why) { hidden[why]++; continue; }
     if (!r.item) { hidden.enchant++; continue; }
@@ -191,7 +291,7 @@ function compute() {
   }
   const key = { daily: e => e.daily, craft: e => e.profit, margin: e => e.margin }[state.sort];
   rows.sort((a, b) => key(b) - key(a) || b.profit - a.profit);
-  return { rows, hidden, sales, profs, book, sellBook };
+  return { rows, hidden, sales, profs, book, sellBook, ctx };
 }
 
 function sourceText(p, part, n) {
@@ -242,6 +342,7 @@ function render() {
   const res = compute();
   const { rows, hidden, sales } = res;
   paintStatus();
+  renderFish(res);
 
   const best = rows.find(e => e.profit > 0);
   const profitable = rows.filter(e => e.profit > 0).length;
@@ -294,6 +395,42 @@ function render() {
   $("#perf").textContent = `Priced ${rows.length + Object.values(hidden).reduce((a, b) => a + b, 0)} recipes in ${Math.round(performance.now() - t0)} ms. Click a row for the breakdown.${rows.some(e => e.guess) ? " * guessed demand." : ""}`;
 }
 
+const fishPart = x => x.how === "AH" ? "AH" : x.how === "cook" ? `cooked → AH (${esc(x.r.name)})` : x.how === "cook-vendor" ? `cooked → vendor (${esc(x.r.name)})` : "vendor";
+function renderFish(res) {
+  const f = fishCompute(res);
+  $("#fishPanel").hidden = !f;
+  if (!f) return;
+  $("#fishcook").disabled = !res.profs.has("Cooking");
+  const best = f.rows[0];
+  $("#fishSummary").innerHTML = `
+    <div class="pick"><span class="eyebrow">Best spot at fishing ${f.skill}</span><b>${best ? pl(best.perHour) + "/h" : "—"}</b><small>${best ? esc(best.sp.name) : "no spot you can fish"}</small></div>
+    <div><span class="eyebrow">Per day</span><b>${best ? pl(best.daily) : "—"}</b><small>${f.hours} h of fishing</small></div>
+    <div><span class="eyebrow">Catch</span><b>${best ? Math.round(best.catches).toLocaleString("en-GB") : "—"}</b><small>fish a day at ${state.castSec} s a cast</small></div>
+    <div><span class="eyebrow">Cooking</span><b>${f.cooking ? "on" : "off"}</b><small>${f.cooking ? "cooks fish when the dish pays more" : res.profs.has("Cooking") ? "no fish recipe at your skill" : "tick Cooking to cook the catch"}</small></div>`;
+  $("#fishRows").innerHTML = f.rows.slice(0, 40).map((e, i) => {
+    const sp = e.sp, open = state.fishOpen.has(i + "|" + sp.name);
+    const away = Math.round((1 - e.p) * 100);
+    const top = e.items.filter(x => x.value > 0).slice(0, 3).map(x => `${esc(ITEMS[x.id]?.n || x.id)}`).join(", ");
+    const ah = e.items.reduce((a, x) => a + x.parts.filter(p => p.how === "AH").reduce((b, p) => b + p.units, 0), 0);
+    const cooked = e.items.reduce((a, x) => a + x.parts.filter(p => p.how.startsWith("cook")).reduce((b, p) => b + p.units, 0), 0);
+    const vend = e.items.reduce((a, x) => a + x.units, 0) - ah - cooked;
+    const how = [ah >= 1 ? `${n0(ah)} AH` : "", cooked >= 1 ? `${n0(cooked)} cooked` : "", vend >= 1 ? `${n0(vend)} vendor` : ""].filter(Boolean).join(" · ");
+    const key = i + "|" + sp.name;
+    return `<tr class="row${open ? " open" : ""}" data-fish="${esc(key)}" tabindex="0" aria-expanded="${open}">
+      <td><div class="crate"><span class="caret">▸</span><div><b>${esc(sp.name)}</b><div class="meta mm-tags"><span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span>${e.o.lure ? ` <span class="tag toolget">${esc(ITEMS[e.o.lure.id]?.n || "lure")} (+${e.o.bonus})</span>` : ""}${away ? ` <span class="mm-flag warn">${away}% get away</span>` : ""}</div><div class="meta">${top}</div></div></div></td>
+      <td class="num">${n0(e.catches)}<small>${Math.round(e.p * 100)}% catch</small></td>
+      <td class="num">${how || "—"}</td>
+      <td class="num">${e.lure ? gold(e.lure) : "—"}</td>
+      <td class="num">${pl(e.perHour)}</td>
+      <td class="num mm-daily">${pl(e.daily)}</td>
+    </tr>${open ? `<tr class="detail"><td colspan="6"><ul class="mm-kv">${e.items.filter(x => x.units >= 0.5).map(x => `<li><span>${n0(x.units)} × ${wh(x.id, ITEMS[x.id]?.n || x.id)}<small class="muted"> — ${x.parts.map(p => `${n0(p.units)} ${fishPart(p)} at ${gold(Math.round(p.unit))}`).join(", ")}</small></span><b>${gold(Math.round(x.value))}</b></li>`).join("")}
+      ${e.lure ? `<li><span>Lures: ${esc(ITEMS[e.o.lure.id]?.n)} every ${e.o.lure.mins} min</span><b>−${gold(Math.round(e.lure))}</b></li>` : ""}
+      <li class="tot">Per day<b>${pl(e.daily)}</b></li></ul>
+      <p class="fine">Nothing gets away from skill ${sp.full} (with pole and lure). AH sales are capped at your share of each fish's measured daily sales; the rest is cooked or vendored.</p></td></tr>` : ""}`;
+  }).join("") || `<tr><td colspan="6" class="empty">No spot catches anything at fishing ${f.skill}.</td></tr>`;
+  $("#fishHidden").textContent = f.tooLow ? `${f.tooLow} spots need more fishing skill (or a better lure).` : "";
+}
+
 function paintStatus() {
   const s = SALES?.updated ? ` · sales ${ago(SALES.updated)}` : "";
   $("#status").classList.remove("err");
@@ -305,7 +442,7 @@ function paintStatus() {
 
 function paintProfs() {
   const picked = Object.keys(state.profs).filter(k => state.profs[k] > 0);
-  $("#profs").innerHTML = REC.professions.map(p => {
+  $("#profs").innerHTML = [...REC.professions, { name: "Fishing" }].map(p => {
     const on = state.profs[p.name] > 0;
     return `<label class="mm-prof${on ? " on" : ""}"><input type="checkbox" data-prof="${esc(p.name)}" ${on ? "checked" : ""}> <span>${esc(p.name === "Mining" ? "Mining (smelting)" : p.name)}</span>
       <input type="number" min="1" max="300" data-skill="${esc(p.name)}" value="${on ? state.profs[p.name] : 300}" ${on ? "" : "disabled"} aria-label="${esc(p.name)} skill"></label>`;
@@ -329,6 +466,14 @@ function bind() {
   $("#rare").onchange = e => set("rare", e.target.checked);
   $("#risky").onchange = e => set("risky", e.target.checked);
   $("#all").onchange = e => set("all", e.target.checked);
+  $("#fishhours").oninput = e => set("fishHours", Math.max(0.25, Math.min(24, Number(e.target.value) || 2)));
+  $("#castsec").oninput = e => set("castSec", Math.max(5, Math.min(40, Number(e.target.value) || FISH_SECONDS)));
+  $("#pole").onchange = e => set("pole", Number(e.target.value));
+  $("#level").oninput = e => set("level", Math.max(1, Math.min(60, Number(e.target.value) || 60)));
+  $("#fishcook").onchange = e => set("fishCook", e.target.checked);
+  const ftoggle = tr => { const k = tr.dataset.fish; state.fishOpen.has(k) ? state.fishOpen.delete(k) : state.fishOpen.add(k); render(); };
+  $("#fishRows").onclick = e => { if (e.target.closest("a")) return; const tr = e.target.closest("tr.row"); if (tr) ftoggle(tr); };
+  $("#fishRows").onkeydown = e => { const tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); ftoggle(tr); } };
   document.querySelectorAll("[data-own]").forEach(c => {
     c.checked = state.own.has(c.dataset.own);
     c.onchange = () => { c.checked ? state.own.add(c.dataset.own) : state.own.delete(c.dataset.own); store.set("mm:own", [...state.own]); render(); };
@@ -368,13 +513,19 @@ async function refresh() {
 
 async function load() {
   try {
-    const [rec] = await Promise.all([loadJson("data/recipes.json"), fetchData()]);
-    REC = rec; ITEMS = REC.items;
+    const [rec, fish] = await Promise.all([loadJson("data/recipes.json"), loadJson("data/fishing.json").catch(() => null), fetchData()]);
+    REC = rec; ITEMS = REC.items; FISH = fish;
+    if (FISH) {
+      for (const [id, it] of Object.entries(FISH.items)) ITEMS[id] ||= it;
+      for (const sp of FISH.spots) for (const [id] of sp.fish) FISHED.add(id);
+      FISHED.add(13755); FISHED.add(13756);
+    }
     for (const p of REC.professions) for (const r of p.recipes) { r.prof = p.name; RECIPE.set(r.id, r); }
     $("#share").value = String(state.share);
     $("#minprofit").value = state.minProfit; $("#minmargin").value = state.minMargin; $("#time").value = state.time; $("#minsales").value = state.minSales;
     $("#patterns").value = state.patterns; $("#sort").value = state.sort; $("#ownmode").value = state.ownMode;
     $("#neutral").checked = state.neutral; $("#rare").checked = state.rare; $("#risky").checked = state.risky; $("#all").checked = state.all;
+    $("#fishhours").value = state.fishHours; $("#castsec").value = state.castSec; $("#pole").value = String(state.pole); $("#level").value = state.level; $("#fishcook").checked = state.fishCook;
     paintProfs(); bind(); render();
     setInterval(refresh, REFRESH_MS);
     setInterval(() => PRICES && paintStatus(), 60e3);

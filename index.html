@@ -41,8 +41,8 @@
   <section class="panel settings" aria-label="Route settings">
     <div class="controls">
       <div class="ctl"><label for="prof">Profession</label><select id="prof"></select></div>
-      <div class="ctl"><label for="from">From skill</label><input id="from" type="number" min="1" max="299" value="1"></div>
-      <div class="ctl"><label for="to">To skill</label><input id="to" type="number" min="2" max="300" value="300"></div>
+      <div class="ctl"><label for="from" id="fromLbl">From skill</label><input id="from" type="number" min="1" max="299" value="1"></div>
+      <div class="ctl"><label for="to" id="toLbl">To skill</label><input id="to" type="number" min="2" max="300" value="300"></div>
       <div class="ctl">
         <label for="sellmode">Plan the route for</label>
         <select id="sellmode">
@@ -83,13 +83,40 @@
           <label class="chk"><input id="mining" type="checkbox"> I can smelt bars (Mining)</label>
           <label class="chk"><input id="neutral" type="checkbox"> Also buy from Blackwater AH</label>
         </div>
-        <fieldset class="ctl profs"><legend>Crafting stations I can use</legend><div id="stations" class="stations"></div></fieldset>
+        <fieldset class="ctl profs" id="stationsCtl"><legend>Crafting stations I can use</legend><div id="stations" class="stations"></div></fieldset>
+      </div>
+      <div class="controls fish-ctl" id="fishCtl" hidden>
+        <div class="ctl fish-both"><label for="ffrom">Fishing from skill</label><input id="ffrom" type="number" min="1" max="299" value="1"></div>
+        <div class="ctl fish-both"><label for="fto">Fishing to skill</label><input id="fto" type="number" min="2" max="300" value="300"></div>
+        <div class="ctl">
+          <label for="pole">Fishing pole</label>
+          <select id="pole">
+            <option value="0">Fishing Pole (+0)</option>
+            <option value="5">Strong Fishing Pole (+5)</option>
+            <option value="20">Big Iron Fishing Pole (+20)</option>
+            <option value="25">Nat Pagle's Extreme Angler FC-5000 (+25)</option>
+            <option value="35">Arcanite Fishing Pole (+35)</option>
+          </select>
+        </div>
+        <div class="ctl"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
+        <div class="ctl"><label for="hourval">My time is worth (gold / hour)</label><input id="hourval" type="number" min="0" step="1" value="10"></div>
       </div>
       <p class="hint" id="time-help">Character level decides how far you can train: Journeyman (past 75) needs level 10, Expert (past 150) level 20, Artisan (past 225) level 35. Time value adds a cost to every craft, so the route prefers fewer crafts. Time to sell is how long you'll keep relisting crafts on the AH.</p>
     </details>
   </section>
 
-  <section class="panel" aria-label="Route">
+  <section class="panel" aria-label="Fishing route" id="fishPanel" hidden>
+    <div class="panel-head">
+      <div><h2>Fishing route</h2><p id="fishLead">Where to fish at each skill, with the lure that pays for itself, and what the catch is worth.</p></div>
+    </div>
+    <div class="plan-sum sum2" id="fishSummary" aria-live="polite"></div>
+    <div id="fishStuck"></div>
+    <div class="table-scroll">
+      <table class="shop fishsteps"><thead><tr><th class="num">Skill</th><th>Where to fish</th><th class="num">Catches</th><th class="num">Time</th><th class="num">Lures</th><th class="num" id="fishRetHead">Catch worth</th></tr></thead><tbody id="fishSteps"></tbody></table>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Route" id="routePanel">
     <div class="plan-sum sum2" id="summary" aria-live="polite"></div>
     <div id="stuck"></div>
     <p class="hint" id="excl"></p>
@@ -101,7 +128,7 @@
     </div>
   </section>
 
-  <section class="panel" aria-label="Shopping list">
+  <section class="panel" aria-label="Shopping list" id="shopPanel">
     <div class="panel-head">
       <div><h2>Shopping list</h2><p>Everything the route buys, biggest first.</p></div>
     </div>
@@ -131,6 +158,11 @@
     <p>Reagents come from vendors when cheaper, otherwise from the cheapest auction listings still left, or are crafted yourself (bolts, bars, leather…) when that is cheaper. Click ✕ on a step to drop a recipe you don't want; the route is re-planned without it.</p>
     <p>Trainer fees are included: each trainer recipe's cost is paid once, on the step that first uses it ("incl. training"), and each rank's fee (Journeyman 5s, Expert 50s, Artisan 5g) on its training row. Forever's trainer prices and learn skills come from Wowhead's Forever data. Cooking and First Aid's higher ranks come from books or quests, not a trainer fee.</p>
     <p>The route switches recipes only when the other one is clearly cheaper (15%, and at least a minimum per skill point that grows with level) and stays usable for at least 5 more points, so it doesn't jump between items to save a few copper.</p>
+    <h3>Fishing</h3>
+    <p>Pick <i>Fishing</i> or <i>Fishing + Cooking</i> as the profession. A cast catches something with chance (your skill − the spot's base skill + 5)%, where your skill includes the pole and lure; below the base skill nothing bites, and from base + 95 nothing gets away (25 in the starting zones, 75 in the capitals and level 10–20 zones, 150, 225, 300 and 425 further out). Fishing skill goes up on successful catches only, and where you fish doesn't change the rate: 1 catch per point up to 100, then one more catch per point every 25 skill (10 per point at 290–300), about 1,280 catches for 1–300.</p>
+    <p>Each skill point picks the spot and lure with the lowest cost: hours spent × what your time is worth, plus lures, minus what the catch sells for (on the AH up to your share of measured demand, the rest at the vendor). It only moves to another spot when that is clearly better, since travel isn't free, and only to zones your character level is suited for. Ranks: Journeyman at skill 50 from any fishing trainer (level 10), Expert with the book "Expert Fishing - The Bass and You" from Old Man Heming in Booty Bay (skill 125, level 20), Artisan from Nat Pagle's quest in Dustwallow Marsh (skill 225, level 35).</p>
+    <p><i>Fishing + Cooking</i> plans both: the fishing route first, then the cooking route uses the fish you caught before buying any (each fish counted at what you'd have sold it for). The fishing route values fish the cooking route needs at what buying them would cost, so it prefers spots with the fish you'll cook. Cook a step once you've caught its fish.</p>
+    <p class="fine">Fishing data: Classic 1.12 server tables (zone skills and catch tables), whose skill thresholds match WoW Forever's; Forever's fishing camp objects (Fishing Rack, Fishing Hut) and new baits aren't included. Fish shares are averages: Nightfin Snapper bites at night and Sunscale Salmon by day, and Winter Squid (Oct–Mar) or Summer Bass (Apr–Sep) depend on the season. Schools (pools) aren't modelled.</p>
     <h3>How AH sales are estimated</h3>
     <p>Blizzard's API lists auctions but never says what sold. Every hour the price job compares the new snapshot with the previous one: a listing with 2+ hours left that is gone an hour later can't have expired, so it was bought (or cancelled by its seller, which this can't tell apart). That gives units sold per day for each item.</p>
     <p>The plan only puts on the AH what you could sell at half of that daily demand over the time you pick, priced at the lower of the cheapest listing now and the average price items actually sold at, minus the 5% cut. The rest is vendored. Prices move while everyone levels: when an item's price is falling, the plan assumes it keeps falling until the middle of your selling time (it never assumes a rise), and when more than 2 days of supply is already listed your share shrinks in proportion. The sell list shows each item's trend and warns about crowded markets; when the bot publishes new prices the page offers to re-plan. Deposits and undercutting wars are not included, so the AH total is still an estimate; the vendor total is guaranteed.</p>

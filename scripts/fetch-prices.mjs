@@ -273,7 +273,8 @@ async function main() {
   const crateIds = await resolveCrateIds();
   const recipes = JSON.parse(await readFile(new URL("../data/recipes.json", import.meta.url), "utf8"));
   const crateItems = new Set([...Object.keys(ITEMS).map(Number), ...Object.values(crateIds)]);
-  const wanted = new Set([...crateItems, ...Object.keys(recipes.items).map(Number), ...WRIT_ITEM_IDS]);
+  const fishing = JSON.parse(await readFile(new URL("../data/fishing.json", import.meta.url), "utf8")); // fish, lures, poles
+  const wanted = new Set([...crateItems, ...Object.keys(recipes.items).map(Number), ...Object.keys(fishing.items).map(Number), ...WRIT_ITEM_IDS]);
   const factions = {}, snaps = {};
   for (const [faction, hid] of Object.entries(houses)) {
     const scan = await scanHouse(hid, wanted);

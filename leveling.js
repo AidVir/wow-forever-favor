@@ -1,4 +1,5 @@
 import { $, store, esc, gold, makeBook, buyCost, consume, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, marketTrend, projectPrice, trendLabel } from "./common.js";
+import { FISH_SECONDS, catchChance, catchesPerPoint, spotYield, lureOptions, openSpots, seasonFish } from "./fishing.js";
 
 const RARE_STATIONS = new Set(["Black Anvil", "Black Forge", "Arcane Forge", "Moonwell", "Icebellow Anvil", "Master Forge", "Anarchist's Workbench"]);
 const state = {
@@ -17,8 +18,16 @@ const state = {
   mining: store.get("lv:mining", false),
   stationsOff: new Set(store.get("lv:stationsOff", null) ?? [...RARE_STATIONS]),
   excluded: new Set(store.get("lv:excluded", [])),
+  // fishing ("Fishing" and "Fishing + Cooking" in the profession list)
+  ffrom: store.get("lv:ffrom", 1),
+  fto: store.get("lv:fto", 300),
+  castSec: store.get("lv:castSec", FISH_SECONDS),
+  pole: store.get("lv:pole", 0),
+  hourValue: store.get("lv:hourValue", 10),
 };
-let PRICES, REC, ITEMS;
+let PRICES, REC, ITEMS, FISH;
+const FISHING = "Fishing", FISH_COOK = "Fishing + Cooking";
+const fishMode = () => state.prof === FISHING || state.prof === FISH_COOK;
 
 // --- training ranks --------------------------------------------------------------------
 // Each rank raises the skill cap; you can train it once you have the skill and character level.
@@ -36,6 +45,7 @@ const TRAINERS = {
   Leatherworking: { Expert: { horde: "Una, Thunder Bluff", alliance: "Telonis, Darnassus" }, Artisan: { horde: "Hahrana Ironhide, Camp Mojache (Feralas)", alliance: "Drakk Stonehand, Aerie Peak (The Hinterlands)" } },
   Enchanting: { Expert: { horde: "Hgarth, Sun Rock Retreat (Stonetalon Mountains)", alliance: "Kitta Firewind, Tower of Azora (Elwynn Forest)" }, Artisan: { both: "Annora, inside Uldaman (Badlands); bring a group" } },
   Engineering: { Expert: { horde: "Roxxik, Orgrimmar", alliance: "Springspindle Fizzlegear, Ironforge" }, Artisan: { both: "Buzzek Bracketswing, Gadgetzan (Tanaris)" } },
+  Cooking: { Expert: { horde: "book \"Expert Cookbook\" from Wulan, Shadowprey Village (Desolace)", alliance: "book \"Expert Cookbook\" from Shandrina, Mystral Lake (Ashenvale)" }, Artisan: { both: "quest \"Clamlette Surprise\" from Dirge Quikcleave, Gadgetzan (12 Giant Egg, 10 Zesty Clam Meat, 20 Alterac Swiss)" } },
 };
 function trainerFor(prof, rank) {
   if (rank === "Journeyman") return "any capital-city trainer";
@@ -61,7 +71,11 @@ const ONCE_SPREAD = 5; // 10%, at least 50 copper per point
 const chance = (r, s) => s < r.yellow ? 1 : s >= r.grey ? 0 : (r.grey - s) / (r.grey - r.yellow);
 const color = (r, s) => s < r.yellow ? "orange" : s < r.green ? "yellow" : s < r.grey ? "green" : "grey";
 
-function profData() { return REC.professions.find(p => p.name === state.prof); }
+// Fishing has no recipes; "Fishing + Cooking" plans Cooking with the fish the fishing route catches.
+function profData() {
+  if (state.prof === FISHING) return { name: FISHING, recipes: [] };
+  return REC.professions.find(p => p.name === (state.prof === FISH_COOK ? "Cooking" : state.prof));
+}
 
 // Cheapest way to get `qty` of an item right now: what earlier steps made (ctx.inv, valued at what you'd
 // otherwise sell it for), vendor (unlimited), AH (consumes book; not for bind-on-pickup items) or craft it
@@ -203,6 +217,80 @@ function saleModel(book0) {
   return { value, unsell, sold, made, ahUnit, stat, info, trend, supplyDays };
 }
 
+// --- fishing route --------------------------------------------------------------------------
+// Highest fishing skill this character can reach: Journeyman (past 75) needs level 10, the Expert book
+// (past 150) level 20, the Artisan quest (past 225) level 35.
+function fishLevelCap() {
+  let cap = 75;
+  for (const k of FISH.ranks) if (state.level >= k.level) cap = k.cap;
+  return cap;
+}
+const FISH_STICK = 0.15; // stay at the current spot unless another is 15% better per point (travel isn't free)
+// One-time costs of the fishing ranks: Journeyman 5s at a trainer, the Expert book (AH or vendor), Artisan quest free.
+function fishRankCost(k, book) {
+  if (k.name === "Journeyman") return 500;
+  if (k.book) { const c = [minPrice(book, k.book), FISH.items[k.book]?.v].filter(x => x != null); return c.length ? Math.min(...c) : 0; }
+  return 0;
+}
+// Where to fish for each skill point. The skill-up rate doesn't depend on the spot, only on how many casts
+// get away, so each point picks the spot (and lure) with the lowest: hours x your time value + lure cost − what
+// the catch is worth. The catch is valued like crafts (AH share or vendor), or at what buying it would cost
+// when the cooking route needs it (`want`).
+function fishRoute(sales, want) {
+  const combined = state.prof === FISH_COOK;
+  const from = Math.max(1, combined ? state.ffrom : state.from), to = Math.min(300, combined ? state.fto : state.to);
+  const end = Math.min(to, fishLevelCap());
+  const book = makeBook(PRICES, state.faction, state.neutral);
+  const spots = openSpots(FISH, state.faction, state.level);
+  const hourValue = Math.max(0, Number(state.hourValue) || 0) * 10000;
+  const sec = Math.max(5, Number(state.castSec) || FISH_SECONDS);
+  const unitCache = new Map();
+  const unit = id => {
+    if (unitCache.has(id)) return unitCache.get(id);
+    const v = sales.value(id, 1, false);
+    let u = state.sell === "ah" ? v.ah : state.sell === "vendor" ? v.vendor : 0;
+    if (want?.get(id) > 0) { const c = [minPrice(BOOK0, id), ITEMS[id]?.v].filter(x => x != null); if (c.length) u = Math.max(u, Math.floor(Math.min(...c) * 0.9)); }
+    unitCache.set(id, u); return u;
+  };
+  const yields = new Map(spots.map(sp => [sp, spotYield(sp)]));
+  const perCatch = new Map(spots.map(sp => [sp, yields.get(sp).reduce((a, [id, n]) => a + n * unit(id), 0)]));
+  const steps = []; let stuck = null, cost = 0;
+  const ranks = [];
+  for (const k of FISH.ranks) if (from < k.cap - 75 + 1 && end > k.cap - 75) { const c = fishRankCost(k, book); ranks.push({ ...k, at: k.cap - 75, cost: c }); cost += c; }
+  if (from <= 1) cost += 100; // Apprentice Fishing
+  let last = null;
+  for (let s = from; s < end; s++) {
+    const cpp = catchesPerPoint(FISH, s);
+    const opts = lureOptions(FISH, book, s);
+    let best = null, here = null;
+    for (const sp of spots) for (const o of opts) {
+      const p = catchChance(sp, s + Number(state.pole || 0) + o.bonus);
+      if (p <= 0) continue;
+      const casts = cpp / p, hours = casts * sec / 3600;
+      const c = { sp, o, p, casts, hours, value: cpp * perCatch.get(sp), lure: hours * o.perHour };
+      c.score = hours * hourValue + c.lure - c.value;
+      if (!best || c.score < best.score) best = c;
+      if (last && last.sp === sp && (!here || c.score < here.score)) here = c;
+    }
+    if (!best) { stuck = s; break; }
+    // moving to another spot has to be worth it: 15% better per point, and at least half a minute of your time
+    if (here && here.sp !== best.sp && here.score - best.score < Math.max(Math.abs(best.score) * FISH_STICK, hourValue / 120, 20)) best = here;
+    const rankBreak = [75, 150, 225].includes(s) && last && last.from < s;
+    if (!last || last.sp !== best.sp || (last.o.lure?.id ?? 0) !== (best.o.lure?.id ?? 0) || rankBreak) {
+      last = { fish: true, sp: best.sp, o: best.o, from: s, to: s, casts: 0, catches: 0, hours: 0, lureCost: 0, lures: 0, p: best.p, items: new Map(), vendor: 0, ah: 0, onAh: 0, kept: 0, used: new Map() };
+      steps.push(last);
+    }
+    last.to = s + 1; last.casts += best.casts; last.catches += cpp; last.hours += best.hours; last.lureCost += best.lure;
+    if (best.o.lure) last.lures += best.hours * 60 / best.o.lure.mins;
+    last.pEnd = best.p;
+  }
+  for (const st of steps) {
+    st.lures = Math.ceil(st.lures); st.lureCost = st.o.lure ? st.lures * st.o.price : 0; cost += st.lureCost;
+    for (const [id, n] of yields.get(st.sp)) { const u = Math.round(n * st.catches); if (u > 0) st.items.set(id, u); }
+  }
+  return { steps, ranks, cost, stuck, from, to, end, capped: end < to ? end : null, hours: steps.reduce((a, x) => a + x.hours, 0), casts: steps.reduce((a, x) => a + x.casts, 0), catches: steps.reduce((a, x) => a + x.catches, 0), sec };
+}
+
 // `future`: reagents (item id -> units) a first pass of the route used. Crafting those for skill-ups
 // counts at what buying them would cost, and later steps use them up ("keep N for later"), like the
 // written guides do with grinding stones, bolts and blasting powder.
@@ -319,7 +407,20 @@ function plan(future = null, usage = null) {
     }
   }
 
-  const end = Math.min(300, state.to, levelCap());
+  // --- fishing: the route's catches are sold like crafts, or kept for cooking ---------------------
+  const fish = fishMode() ? fishRoute(sales, futureLeft) : null;
+  if (fish) {
+    total += fish.cost;
+    for (const st of fish.steps) for (const [id, units] of st.items) {
+      if (units <= 0) continue;
+      const v = sales.value(id, units, true);
+      st.vendor += v.vendor; st.ah += v.ah; st.onAh += v.onAh;
+      resaleVendor += v.vendor; resaleAh += v.ah;
+      (lots.get(id) || lots.set(id, []).get(id)).push({ st, n: units, vend: v.vendor / units, ah: v.ah / units, onAh: v.onAh / units });
+    }
+  }
+
+  const end = state.prof === FISHING ? 0 : Math.min(300, state.to, levelCap());
   const rankFees = []; // [{name, cap, fee}] rank training paid along the route (null = not a trainer fee, e.g. a book)
   if (state.from <= 1 && REC.ranks?.[prof.name]?.Apprentice) total += REC.ranks[prof.name].Apprentice;
   for (let s = Math.max(1, state.from); s < end; ) {
@@ -443,9 +544,9 @@ function plan(future = null, usage = null) {
     const n = sales.sold.get(id) || 0, unit = sales.ahUnit(id), vend = ITEMS[id]?.s || 0;
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
-  const capped = !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
+  const capped = state.prof === FISHING ? null : !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
   const feeOf = name => rankFees.find(f => f.name === name);
-  return { steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
+  return { fish, steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
     usage: steps.reduce((m, st) => m.set(st.r.id, (m.get(st.r.id) || 0) + (st.to - st.from)), new Map()) };
 }
 
@@ -509,6 +610,44 @@ function learnText(st) {
 }
 const OPEN_STEPS = new Set(); // expanded step rows (not saved)
 
+const hrs = h => h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${Math.floor(h)} h ${String(Math.round((h % 1) * 60)).padStart(2, "0")} min`;
+// Fishing route table: one row per spot (and lure), with "Train" rows at each rank.
+function renderFish(p) {
+  const f = p.fish, retVendor = state.sell === "vendor";
+  $("#fishRetHead").textContent = retVendor ? "Vendor value" : state.sell === "none" ? "Catch (not counted)" : "AH value (est.)";
+  const worth = f.steps.reduce((a, st) => a + (retVendor ? st.vendor : st.ah), 0);
+  const lures = f.steps.reduce((a, st) => a + st.lureCost, 0);
+  $("#fishSummary").innerHTML = `
+    <div class="pick sum-main"><span class="eyebrow">Fishing ${f.from} → ${f.stuck ?? f.end}</span><b>${hrs(f.hours)}</b><small>${Math.round(f.casts).toLocaleString("en-GB")} casts at ${f.sec} s, ${Math.round(f.catches).toLocaleString("en-GB")} catches</small></div>
+    <div class="sum-stats">
+      <div><span class="eyebrow">Catch worth</span><b>${state.sell === "none" ? "—" : gold(worth)}</b><small>${state.prof === FISH_COOK ? "after the fish kept for cooking" : retVendor ? "at the vendor" : "AH share + vendor (est.)"}</small></div>
+      <div><span class="eyebrow">Lures + ranks</span><b>${gold(f.cost)}</b><small>lures ${gold(lures)}</small></div>
+      <div><span class="eyebrow">Per hour</span><b>${state.sell === "none" || !f.hours ? "—" : pl((worth - f.cost) / f.hours)}</b><small>while leveling</small></div>
+    </div>`;
+  $("#fishStuck").innerHTML = f.stuck != null ? `<p class="warn">Stops at ${f.stuck}: no spot your character level allows catches anything at this skill.</p>`
+    : f.capped ? `<p class="warn">Stops at ${f.capped}: the next fishing rank needs character level ${FISH.ranks.find(k => k.cap - 75 === f.capped)?.level}. Change "Character level" under More options.</p>` : "";
+  const rankRow = k => `<tr class="train"><td class="num rng">${k.at}</td><td colspan="5"><b>${k.name} Fishing</b> before skill ${k.at} <span class="meta">needs skill ${k.skill} and level ${k.level} · ${esc(k.how)}${k.cost ? ` · ${gold(k.cost)}` : k.quest ? " · free" : ""}</span></td></tr>`;
+  const done = new Set();
+  $("#fishSteps").innerHTML = f.steps.map(st => {
+    let pre = "";
+    for (const k of f.ranks) if (!done.has(k.name) && st.from >= k.at) { done.add(k.name); pre += rankRow(k); }
+    const sp = st.sp;
+    const top = [...st.items.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${n.toLocaleString("en-GB")} ${wh(id, ITEMS[id]?.n || FISH.items[id]?.n || id)}`).join(", ");
+    const away = Math.round((1 - st.p) * 100), awayEnd = Math.round((1 - (st.pEnd ?? st.p)) * 100);
+    const lure = st.o.lure ? `<span class="tag toolget">use ${wh(st.o.lure.id, ITEMS[st.o.lure.id]?.n || FISH.items[st.o.lure.id]?.n)} (+${st.o.bonus})</span> ` : "";
+    const kept = Math.round(st.kept);
+    const val = retVendor ? st.vendor : st.ah;
+    return pre + `<tr><td class="num rng">${st.from}–${st.to}</td>
+      <td><b>${esc(sp.name)}</b> <span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span> ${lure}${kept ? `<span class="tag keep">keep ${kept} for cooking</span>` : ""}
+        <div class="meta">${away || awayEnd ? `${away === awayEnd ? away : `${away}→${awayEnd}`}% get away · ` : ""}none get away at ${sp.full}</div>
+        <div class="meta">${top}</div></td>
+      <td class="num">${Math.round(st.catches).toLocaleString("en-GB")}<small>${Math.round(st.casts).toLocaleString("en-GB")} casts</small></td>
+      <td class="num">${hrs(st.hours)}</td>
+      <td class="num">${st.lureCost ? gold(st.lureCost) : "—"}${st.lures ? `<small>${st.lures} × ${st.o.lure.mins} min</small>` : ""}</td>
+      <td class="num">${state.sell === "none" ? "—" : gold(val)}${st.lureCost ? `<small>${pl(val - st.lureCost)}</small>` : ""}</td></tr>`;
+  }).join("") + f.ranks.filter(k => !done.has(k.name)).map(rankRow).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
+}
+
 function render() {
   if (!PRICES || !REC) return;
   const prof = profData();
@@ -520,20 +659,30 @@ function render() {
   const t0 = performance.now();
   const p1 = plan();
   const p = plan(p1.demand, p1.usage); // second pass knows which intermediates the route needs later and how long each recipe is used
+  const fishOnly = state.prof === FISHING, combined = state.prof === FISH_COOK;
+  $("#fishPanel").hidden = !p.fish;
+  $("#routePanel").hidden = $("#shopPanel").hidden = fishOnly;
+  $("#fishCtl").hidden = !p.fish; $("#stationsCtl").hidden = fishOnly;
+  document.querySelectorAll(".fish-both").forEach(e => { e.hidden = !combined; });
+  $("#fromLbl").textContent = combined ? "Cooking from skill" : "From skill";
+  $("#toLbl").textContent = combined ? "Cooking to skill" : "To skill";
+  if (p.fish) renderFish(p);
   // The answer for the chosen selling mode is the big number; the other totals sit beside it.
   const sums = {
     none: { big: `Materials${state.patterns !== "trainer" ? " + patterns" : ""} cost`, small: "Materials", val: pl(-p.total), sub: "what you spend" },
     vendor: { big: "Profit / loss if you vendor everything", small: "If you vendor", val: pl(p.resaleVendor - p.total), sub: `vendor sales ${gold(p.resaleVendor)}` },
     ah: { big: "Profit / loss if you sell on the AH", small: "If you sell on AH", val: pl(p.resaleAh - p.total), sub: `AH + vendor sales ${gold(p.resaleAh)} (est.)` },
   };
+  if (fishOnly) { sums.none.big = "Lures + ranks cost"; sums.vendor.big = "Profit if you vendor the catch"; sums.ah.big = "Profit if you sell the catch on the AH"; }
   const main = sums[state.sell] || sums.none;
   const rest = ["none", "vendor", "ah"].filter(k => sums[k] !== main).map(k => sums[k]);
   $("#summary").innerHTML = `
     <div class="pick sum-main"><span class="eyebrow">${main.big}</span><b>${main.val}</b><small>${main.sub}</small></div>
     <div class="sum-stats">
       ${rest.map(x => `<div><span class="eyebrow">${x.small}</span><b>${x.val}</b><small>${x.sub}</small></div>`).join("")}
-      <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
-      <div><span class="eyebrow">Skill</span><b>${state.from} → ${p.stuck ? p.stuck.s : p.capped ?? state.to}</b></div>
+      ${fishOnly ? "" : `<div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
+      <div><span class="eyebrow">${combined ? "Cooking" : "Skill"}</span><b>${state.from} → ${p.stuck ? p.stuck.s : p.capped ?? state.to}</b></div>`}
+      ${p.fish ? `<div><span class="eyebrow">Fishing</span><b>${p.fish.from} → ${p.fish.stuck ?? p.fish.end}</b><small>${hrs(p.fish.hours)} · ${Math.round(p.fish.catches).toLocaleString("en-GB")} catches</small></div>` : ""}
     </div>`;
   const nextRank = p.capped ? RANKS.find(k => k.cap === p.capped) : null;
   $("#stuck").innerHTML = p.stuck ? `<p class="warn">Stopped at ${p.stuck.s}: the auction house doesn't have enough ${p.stuck.miss.map(id => wh(id, ITEMS[id]?.n || id)).join(", ") || "reagents"} for the remaining recipes. Try "I can smelt", Blackwater, more recipes or stations — or farm those yourself.</p>`
@@ -643,6 +792,11 @@ function bind() {
   $("#sellmode").onchange = e => set("sell", e.target.value);
   $("#wait").onchange = e => set("wait", Number(e.target.value));
   $("#mining").onchange = e => set("mining", e.target.checked);
+  $("#ffrom").oninput = e => set("ffrom", Math.max(1, Math.min(299, Number(e.target.value) || 1)));
+  $("#fto").oninput = e => set("fto", Math.max(2, Math.min(300, Number(e.target.value) || 300)));
+  $("#pole").onchange = e => set("pole", Number(e.target.value));
+  $("#castsec").oninput = e => set("castSec", Math.max(5, Math.min(40, Number(e.target.value) || FISH_SECONDS)));
+  $("#hourval").oninput = e => set("hourValue", Math.max(0, Number(e.target.value) || 0));
   $("#neutral").onchange = e => set("neutral", e.target.checked);
   $("#stations").onchange = e => {
     const n = e.target.dataset.station; if (!n) return;
@@ -678,13 +832,16 @@ async function checkForNewPrices() {
 
 async function load() {
   try {
-    [PRICES, REC, SALES] = await Promise.all([loadPrices(), loadJson("data/recipes.json"), loadJson("data/sales.json?t=" + Date.now()).catch(() => null)]);
+    [PRICES, REC, SALES, FISH] = await Promise.all([loadPrices(), loadJson("data/recipes.json"), loadJson("data/sales.json?t=" + Date.now()).catch(() => null), loadJson("data/fishing.json")]);
     TRENDS = await loadJson("data/trends.json?t=" + Date.now()).catch(() => null);
     setInterval(checkForNewPrices, 10 * 60e3);
     ITEMS = REC.items;
+    for (const [id, it] of Object.entries(FISH.items)) ITEMS[id] ||= it; // fish, lures and junk that no recipe uses
     $("#wait").value = state.wait;
-    $("#prof").innerHTML = REC.professions.filter(p => p.name !== "Mining").map(p => `<option ${p.name === state.prof ? "selected" : ""}>${p.name}</option>`).join("");
-    if (!REC.professions.some(p => p.name === state.prof)) state.prof = REC.professions[0].name;
+    const names = [...REC.professions.filter(p => p.name !== "Mining").map(p => p.name), FISHING, FISH_COOK];
+    if (!names.includes(state.prof)) state.prof = names[0];
+    $("#prof").innerHTML = names.map(n => `<option ${n === state.prof ? "selected" : ""}>${esc(n)}</option>`).join("");
+    $("#ffrom").value = state.ffrom; $("#fto").value = state.fto; $("#pole").value = String(state.pole); $("#castsec").value = state.castSec; $("#hourval").value = state.hourValue;
     $("#from").value = state.from; $("#to").value = state.to;
     $("#patterns").value = state.patterns; $("#time").value = state.time; $("#level").value = state.level; $("#fast").checked = state.fast; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
     $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b> · recipes from client build ${esc(REC.build)}`;
