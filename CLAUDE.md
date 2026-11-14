@@ -257,6 +257,12 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - Catches are sold through the same `saleModel` and become inventory lots.
   - In "Fishing + Cooking", `plan()` for Cooking uses those fish first. The fishing route values fish that the
     first cooking pass needed at 90% of their buy price.
+  - "Cook them first" (`cookCatch`, on by default) means a recipe made entirely from caught fish beats any
+    bought recipe while it gives skill-ups, and caught fish count at vendor price in scoring. Totals still
+    subtract the raw sale credit they give up.
+  - Pass 1 returns `fishWant`: fish recipes that could replace bought cooking steps, with those steps' reagent
+    cost per craft. Pass 2's `fishRoute(…, cookWant)` adds that value to those fish until enough are caught,
+    so the route fishes catfish, trout and so on when cooking needs them.
 - **Money making:**
   - Tick Fishing to rank spots by gold per day for your hours (`fishCompute()`).
   - Each fish goes to its best outlet: raw on the AH up to demand, cooked and sold on the AH up to the

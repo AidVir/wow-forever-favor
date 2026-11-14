@@ -24,8 +24,10 @@ const state = {
   castSec: store.get("lv:castSec", FISH_SECONDS),
   pole: store.get("lv:pole", 0),
   hourValue: store.get("lv:hourValue", 10),
+  cookCatch: store.get("lv:cookCatch", true), // Fishing + Cooking: cook what you catch before buying anything
+
 };
-let PRICES, REC, ITEMS, FISH;
+let PRICES, REC, ITEMS, FISH, FISH_IDS = new Set(); // FISH_IDS: everything fishing can catch
 const FISHING = "Fishing", FISH_COOK = "Fishing + Cooking";
 const fishMode = () => state.prof === FISHING || state.prof === FISH_COOK;
 
@@ -236,7 +238,10 @@ function fishRankCost(k, book) {
 // get away, so each point picks the spot (and lure) with the lowest: hours x your time value + lure cost − what
 // the catch is worth. The catch is valued like crafts (AH share or vendor), or at what buying it would cost
 // when the cooking route needs it (`want`).
-function fishRoute(sales, want) {
+// `cookWant` (Fishing + Cooking, "cook them first"): fish id -> {n, v}: fish the cooking route could cook where it
+// now buys its reagents, and what those reagents cost per craft. Catching them is worth that much more, until
+// n are caught, so the route goes where the next cooking steps' fish bite (catfish, trout…) like the guides.
+function fishRoute(sales, want, cookWant = null) {
   const combined = state.prof === FISH_COOK;
   const from = Math.max(1, combined ? state.ffrom : state.from), to = Math.min(300, combined ? state.fto : state.to);
   const end = Math.min(to, fishLevelCap());
@@ -253,7 +258,9 @@ function fishRoute(sales, want) {
     unitCache.set(id, u); return u;
   };
   const yields = new Map(spots.map(sp => [sp, spotYield(sp)]));
-  const perCatch = new Map(spots.map(sp => [sp, yields.get(sp).reduce((a, [id, n]) => a + n * unit(id), 0)]));
+  const cookLeft = new Map([...(cookWant || new Map())].map(([id, w]) => [id, w.n]));
+  const bonus = id => (cookLeft.get(id) || 0) > 0 ? cookWant.get(id).v : 0;
+  const perCatchNow = sp => yields.get(sp).reduce((a, [id, n]) => a + n * (unit(id) + bonus(id)), 0);
   const steps = []; let stuck = null, cost = 0;
   const ranks = [];
   for (const k of FISH.ranks) if (from < k.cap - 75 + 1 && end > k.cap - 75) { const c = fishRankCost(k, book); ranks.push({ ...k, at: k.cap - 75, cost: c }); cost += c; }
@@ -263,6 +270,7 @@ function fishRoute(sales, want) {
     const cpp = catchesPerPoint(FISH, s);
     const opts = lureOptions(FISH, book, s);
     let best = null, here = null;
+    const perCatch = new Map(spots.map(sp => [sp, perCatchNow(sp)]));
     for (const sp of spots) for (const o of opts) {
       const p = catchChance(sp, s + Number(state.pole || 0) + o.bonus);
       if (p <= 0) continue;
@@ -283,6 +291,7 @@ function fishRoute(sales, want) {
     last.to = s + 1; last.casts += best.casts; last.catches += cpp; last.hours += best.hours; last.lureCost += best.lure;
     if (best.o.lure) last.lures += best.hours * 60 / best.o.lure.mins;
     last.pEnd = best.p;
+    for (const [id, n] of yields.get(best.sp)) if (cookLeft.has(id)) cookLeft.set(id, cookLeft.get(id) - n * cpp);
   }
   for (const st of steps) {
     st.lures = Math.ceil(st.lures); st.lureCost = st.o.lure ? st.lures * st.o.price : 0; cost += st.lureCost;
@@ -296,7 +305,7 @@ function fishRoute(sales, want) {
 // written guides do with grinding stones, bolts and blasting powder.
 // `usage`: skill points each recipe got in the first pass. A pattern or tool bought for a recipe is
 // spread over those points (at least 1), so a pattern bought for 2 crafts carries its full price.
-function plan(future = null, usage = null) {
+function plan(future = null, usage = null, cookWant = null) {
   const spread = r => Math.max(1, usage ? usage.get(r.id) ?? ONCE_SPREAD : ONCE_SPREAD);
   const prof = profData();
   BOOK0 = makeBook(PRICES, state.faction, state.neutral);
@@ -318,7 +327,9 @@ function plan(future = null, usage = null) {
   const inv = {
     qty: id => (lots.get(id) || []).reduce((a, l) => a + l.n, 0),
     // what a unit is worth if kept and sold instead (the cost of using it)
-    value: id => { const l = (lots.get(id) || []).find(x => x.n > 0); return !l ? 0 : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; },
+    // Caught fish in "Fishing + Cooking" (with "cook what I catch" on) count at their vendor price, so the
+    // route cooks them; the totals still subtract what selling them raw would have paid.
+    value: id => { const l = (lots.get(id) || []).find(x => x.n > 0); return !l ? 0 : l.fish && state.cookCatch ? l.vend : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; },
   };
   function takeInv(id, n, user) {
     for (const l of lots.get(id) || []) {
@@ -408,7 +419,7 @@ function plan(future = null, usage = null) {
   }
 
   // --- fishing: the route's catches are sold like crafts, or kept for cooking ---------------------
-  const fish = fishMode() ? fishRoute(sales, futureLeft) : null;
+  const fish = fishMode() ? fishRoute(sales, futureLeft, cookWant) : null;
   if (fish) {
     total += fish.cost;
     for (const st of fish.steps) for (const [id, units] of st.items) {
@@ -416,7 +427,7 @@ function plan(future = null, usage = null) {
       const v = sales.value(id, units, true);
       st.vendor += v.vendor; st.ah += v.ah; st.onAh += v.onAh;
       resaleVendor += v.vendor; resaleAh += v.ah;
-      (lots.get(id) || lots.set(id, []).get(id)).push({ st, n: units, vend: v.vendor / units, ah: v.ah / units, onAh: v.onAh / units });
+      (lots.get(id) || lots.set(id, []).get(id)).push({ st, n: units, vend: v.vendor / units, ah: v.ah / units, onAh: v.onAh / units, fish: true });
     }
   }
 
@@ -461,6 +472,8 @@ function plan(future = null, usage = null) {
       const run = ((net >= 0 ? net / c : net) + timeCost / c) / r.ups; // per point, without one-time costs
       const per = run + once / spread(r); // one-time costs spread over the points this recipe gets
       const cand = { r, per, run, once, cost, back, c, plan, tools, slow: 1 / (c * r.ups) > MAX_CRAFTS_PER_POINT };
+      // made from fish you caught (Fishing + Cooking): every fish it needs is in the catch you're carrying
+      cand.ownFish = !!fish && r.reagents.some(([id]) => FISH_IDS.has(id)) && r.reagents.every(([id, q]) => !FISH_IDS.has(id) || inv.qty(id) >= q);
       cands.push(cand);
       if (!best || per < best.per) best = cand;
       if (!cand.slow && (!bestFast || per < bestFast.per)) bestFast = cand;
@@ -468,6 +481,15 @@ function plan(future = null, usage = null) {
     }
     // Skip recipes that need more than MAX_CRAFTS_PER_POINT crafts per point while a faster one exists.
     if (state.fast && bestFast) best = bestFast;
+    // "Cook the fish I catch first": a recipe made from your catch beats anything bought, as long as it still
+    // gives skill-ups (and isn't a slow one while "avoid slow recipes" is on)
+    if (fish && state.cookCatch) {
+      const own = cands.filter(x => x.ownFish && !(state.fast && x.slow));
+      if (own.length) {
+        best = own.reduce((a, x) => x.per < a.per ? x : a);
+        if (cur && !cur.ownFish) cur = null;
+      }
+    }
     // Keep crafting the current recipe unless the best one is clearly cheaper, so the route doesn't
     // switch back and forth for a few copper.
     // points a recipe can still be crafted for before it needs more than MAX_CRAFTS_PER_POINT crafts a point
@@ -546,7 +568,26 @@ function plan(future = null, usage = null) {
   }).sort((a, b) => b.value - a.value);
   const capped = state.prof === FISHING ? null : !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
   const feeOf = name => rankFees.find(f => f.name === name);
-  return { fish, steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
+  // Fishing + Cooking: cooking steps that buy their reagents where a fish recipe would also give skill-ups:
+  // the fishing route of the next pass tries to catch those fish (see fishRoute's cookWant).
+  let fishWant = null;
+  if (fish && state.cookCatch) {
+    fishWant = new Map();
+    const fishRecipes = prof.recipes.filter(r => allowed(r) && r.reagents.some(([id]) => FISH_IDS.has(id)));
+    for (const st of steps) {
+      if (st.r.reagents.some(([id]) => FISH_IDS.has(id)) || !st.crafts) continue;
+      const perCraft = st.cost / st.crafts;
+      for (let k = st.from; k < st.to; k++) {
+        let br = null, bc = 0;
+        for (const r of fishRecipes) { if (r.learn > k || k >= r.grey) continue; const c = chance(r, k); if (c > bc) { bc = c; br = r; } }
+        if (!br) continue;
+        const [fid, q] = br.reagents.find(([id]) => FISH_IDS.has(id));
+        const w = fishWant.get(fid) || fishWant.set(fid, { n: 0, v: 0 }).get(fid);
+        w.v = (w.v * w.n + perCraft / bc) / (w.n + q / bc); w.n += q / bc;
+      }
+    }
+  }
+  return { fish, fishWant, steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
     usage: steps.reduce((m, st) => m.set(st.r.id, (m.get(st.r.id) || 0) + (st.to - st.from)), new Map()) };
 }
 
@@ -658,7 +699,7 @@ function render() {
 
   const t0 = performance.now();
   const p1 = plan();
-  const p = plan(p1.demand, p1.usage); // second pass knows which intermediates the route needs later and how long each recipe is used
+  const p = plan(p1.demand, p1.usage, p1.fishWant); // second pass knows which intermediates the route needs later and how long each recipe is used
   const fishOnly = state.prof === FISHING, combined = state.prof === FISH_COOK;
   $("#fishPanel").hidden = !p.fish;
   $("#routePanel").hidden = $("#shopPanel").hidden = fishOnly;
@@ -797,6 +838,7 @@ function bind() {
   $("#pole").onchange = e => set("pole", Number(e.target.value));
   $("#castsec").oninput = e => set("castSec", Math.max(5, Math.min(40, Number(e.target.value) || FISH_SECONDS)));
   $("#hourval").oninput = e => set("hourValue", Math.max(0, Number(e.target.value) || 0));
+  $("#cookcatch").onchange = e => set("cookCatch", e.target.checked);
   $("#neutral").onchange = e => set("neutral", e.target.checked);
   $("#stations").onchange = e => {
     const n = e.target.dataset.station; if (!n) return;
@@ -837,11 +879,12 @@ async function load() {
     setInterval(checkForNewPrices, 10 * 60e3);
     ITEMS = REC.items;
     for (const [id, it] of Object.entries(FISH.items)) ITEMS[id] ||= it; // fish, lures and junk that no recipe uses
+    FISH_IDS = new Set([...FISH.spots.flatMap(sp => sp.fish.map(f => f[0])), 13755, 13756]);
     $("#wait").value = state.wait;
     const names = [...REC.professions.filter(p => p.name !== "Mining").map(p => p.name), FISHING, FISH_COOK];
     if (!names.includes(state.prof)) state.prof = names[0];
     $("#prof").innerHTML = names.map(n => `<option ${n === state.prof ? "selected" : ""}>${esc(n)}</option>`).join("");
-    $("#ffrom").value = state.ffrom; $("#fto").value = state.fto; $("#pole").value = String(state.pole); $("#castsec").value = state.castSec; $("#hourval").value = state.hourValue;
+    $("#ffrom").value = state.ffrom; $("#fto").value = state.fto; $("#pole").value = String(state.pole); $("#castsec").value = state.castSec; $("#hourval").value = state.hourValue; $("#cookcatch").checked = state.cookCatch;
     $("#from").value = state.from; $("#to").value = state.to;
     $("#patterns").value = state.patterns; $("#time").value = state.time; $("#level").value = state.level; $("#fast").checked = state.fast; $("#sellmode").value = state.sell; $("#mining").checked = state.mining; $("#neutral").checked = state.neutral;
     $("#status").innerHTML = `Prices updated <b>${ago(PRICES.updated)}</b> · recipes from client build ${esc(REC.build)}`;
