@@ -47,6 +47,7 @@ export function lureOptions(F, book, skill) {
 }
 // Spots this character can fish: own faction's capitals only; `level` filters zones above the character.
 export function openSpots(F, faction, level = 60) {
-  return F.spots.filter(s => (!s.faction || s.faction === faction) && s.levels[0] <= level);
+  // lowest level first, so among spots with the same catch the easiest one is named
+  return F.spots.filter(s => (!s.faction || s.faction === faction) && s.levels[0] <= level).sort((a, b) => a.levels[0] - b.levels[0]);
 }
 export const fishName = (F, ITEMS, id) => ITEMS?.[id]?.n || F.items[id]?.n || String(id);

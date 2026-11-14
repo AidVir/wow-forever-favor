@@ -145,7 +145,14 @@
         </select>
       </div>
       <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60"></div>
-      <div class="ctl"><span class="lbl">Cooking</span><label class="chk"><input id="fishcook" type="checkbox" checked> Cook the catch when the dish pays more</label></div>
+      <div class="ctl">
+        <label for="fishuse">The catch</label>
+        <select id="fishuse">
+          <option value="best">Sell raw or cook it, whichever pays more</option>
+          <option value="cook">Cook everything I can, sell the dishes</option>
+          <option value="raw">Sell it all raw</option>
+        </select>
+      </div>
     </div>
     <div class="plan-sum" id="fishSummary" aria-live="polite"></div>
     <div class="table-scroll">
@@ -176,8 +183,8 @@
     <p><b>You sell per day</b> = sales per day × your share. <b>Profit per day</b> = profit per craft × crafts you can sell per day. This is what the list is ranked by: a big margin on something that sells once a week is worth less than a small one that sells fifty times a day.</p>
     <p><b>Before 6 hours of sales history</b> there is no measured rate yet, so demand is guessed as a quarter of the units listed now, per day. Those rows are marked <i>guess</i>.</p>
     <h3>Fishing</h3>
-    <p>Tick <i>Fishing</i> under your professions to rank fishing spots. A cast catches something with chance (your skill + pole + lure − the spot's base skill + 5)%; nothing bites below the base skill, and nothing gets away from base + 95. Each spot catches its own mix of fish (Classic server tables, which WoW Forever's zone thresholds match), averaged over day and night; Winter Squid or Summer Bass depend on the season. For each spot the best lure is picked: it counts only when the extra catches pay for it.</p>
-    <p>Each fish goes to its best outlet first: the AH up to your share of its measured daily sales (after the cut, a falling price and a lost deposit, as for crafts), then cooked into a dish you can make and sold on the AH up to the dish's demand or vendored (minus the dish's other reagents and your time value per craft), then the vendor. Tick <i>Fish</i> under <i>I gather my own</i> to have the craft list cook your own fish, valued at what selling them raw would pay. Schools (pools), Forever's fishing camp objects and travel time aren't modelled.</p>
+    <p>Tick <i>Fishing</i> under your professions to rank fishing spots. A cast catches something with chance (your skill + pole + lure − the spot's base skill + 5)%; nothing bites below the base skill, and nothing gets away from base + 95. Each spot catches its own mix of fish (Classic server tables, which WoW Forever's zone thresholds match), averaged over day and night; Winter Squid or Summer Bass depend on the season. For each spot the best lure is picked: it counts only when the extra catches pay for it. Spots that catch exactly the same fish at the same skill are one row ("or N more"), so you can fish whichever is most convenient.</p>
+    <p>Each fish goes to its best outlet first: the AH up to your share of its measured daily sales (after the cut, a falling price and a lost deposit, as for crafts), then cooked into a dish you can make and sold on the AH up to the dish's demand or vendored (minus the dish's other reagents and your time value per craft), then the vendor. With <i>Cook everything I can</i> every fish you have a recipe for is cooked first (the dish on the AH up to its demand, the rest of the dishes at the vendor), even when the raw fish would sell for more; each spot's details compare the three choices. Tick <i>Fish</i> under <i>I gather my own</i> to have the craft list cook your own fish, valued at what selling them raw would pay. Schools (pools), Forever's fishing camp objects and travel time aren't modelled.</p>
     <h3>Reliability flags</h3>
     <p><i>few sales</i> (fewer units sold than your minimum), <i>one listing</i> (the price rests on one listing and nothing sold) and <i>price spike</i> (the recent price is over 1.5× the earlier average, which can mean manipulation) are hidden unless you tick <i>Show unreliable markets</i>. <i>thin reagents</i> (a day's reagents cost 15%+ more than the top listings), <i>oversupplied</i>, <i>reagent supply</i>, <i>price falling</i> (down 5%+ a day) and <i>supply rising</i> (50%+ more listed than 24 h ago: others are making it too) are shown as warnings. Arrows next to a price show its trend where there is history.</p>
     <h3>Patterns, stations and what's left out</h3>

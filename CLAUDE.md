@@ -268,6 +268,10 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - Each fish goes to its best outlet: raw on the AH up to demand, cooked and sold on the AH up to the
     dish's demand, cooked and vendored, or vendored raw.
   - The best lure per spot is picked.
+  - "The catch" (`fishUse`) can be `best` (best outlet per fish), `cook` (cook every fish there is a recipe for
+    first, even at a loss vs raw) or `raw`. Each spot's details compare all three.
+  - Spots with the same base skill, fish table and seasonal share are one row ("or N more", "Same catch: …").
+    The leveling route lists them too. `openSpots()` sorts by level, so the lowest-level spot is named.
   - "I gather my own → Fish" values your own fish for cooking crafts.
 - **Cooking recipe vendors:** Classic item data lacks vendors for many cooking recipes.
   `VENDOR_RECIPES` in `scripts/client-extras.mjs` adds the ones the Forever guides name, with faction "Both".
