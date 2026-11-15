@@ -46,8 +46,15 @@ tr.mm-loss > td { opacity: .7; }
 .mm-flaglist { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 #salesnote .hint { margin: 0 0 12px; }
 .controls .mm-own { flex: 1 1 100%; }
+.controls .mm-lookup { flex: 1 1 320px; max-width: 480px; }
+#lookupOut:not(:empty) { margin-top: var(--sp-4); }
+table.mm-ah td:first-child { white-space: nowrap; font-weight: 600; }
+table.mm-ah tr.you td { background: var(--accent-soft); }
+.mm-lookup-uses { margin-top: var(--sp-4); }
+.mm-lookup-uses li span { min-width: 0; }
 
 @media (max-width: 760px) {
   table.mm td:first-child { min-width: 180px; }
   .controls .mm-prof input[type=number] { width: 64px; flex: none; }
 }
+.controls .mm-lookup input { width: 100%; }

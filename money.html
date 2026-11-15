@@ -127,6 +127,20 @@
     <p class="hint" id="hidden"></p>
   </section>
 
+  <section class="panel" aria-label="Item lookup" id="lookupPanel">
+    <div class="panel-head">
+      <div><h2>Look up an item</h2><p>Price, listings and units taken off the AH per day on each auction house, and what is made from it.</p></div>
+    </div>
+    <div class="controls">
+      <div class="ctl mm-lookup">
+        <label for="lookup">Item</label>
+        <input id="lookup" type="search" list="lookupList" placeholder="e.g. Stonescale Eel" autocomplete="off" spellcheck="false">
+        <datalist id="lookupList"></datalist>
+      </div>
+    </div>
+    <div id="lookupOut" aria-live="polite"></div>
+  </section>
+
   <section class="panel" aria-label="Fishing spots" id="fishPanel" hidden>
     <div class="panel-head">
       <div><h2>Fishing spots</h2><p>Where your fishing skill makes the most gold per hour, selling the catch on the AH up to your share of demand, cooking it when the dish pays more, and vendoring the rest.</p></div>

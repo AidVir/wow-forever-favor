@@ -298,3 +298,8 @@ demand models (`leveling.js` still has its own copies and could switch to them).
 - **Flags:** `risk` (few sales, one listing, price spike >1.5×) hides the row unless "Show unreliable
   markets"; `warn` / `info` only label it. Enchantments, never-traded items (no binding data, maybe BoP)
   and cooldown crafts are not ranked. Data reloads every 10 minutes while the tab is open.
+- **Item lookup** (`renderLookup()`): any item in prices/sales (datalist of names): what you'd get on your AH
+  (`sellModel`), and per house cheapest / market price / listed (now, 24 h, 3 d from `trends.json`), units off the
+  AH per day, average price taken, days of supply; plus "Made by" / "Used in" recipes. Saved as `mm:lookup`.
+- **Wording:** sales.json counts listings gone early (bought *or cancelled*; expiry is excluded by the 2 h rule),
+  so the UI says "off the AH per day", never "sold per day".

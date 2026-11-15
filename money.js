@@ -62,6 +62,7 @@ const state = {
   // what to do with the catch: best outlet per fish, cook everything you can, or sell everything raw
   fishUse: (v => ["best", "cook", "raw"].includes(v) ? v : store.get("mm:fishCook", true) === false ? "raw" : "best")(store.get("mm:fishUse", "best")),
   fishOpen: new Set(),
+  lookup: store.get("mm:lookup", ""), // item name in the lookup box
 };
 let PRICES, REC, ITEMS, SALES = null, RECIPE = new Map(), loadedAt = 0;
 
@@ -368,6 +369,7 @@ function render() {
   const { rows, hidden, sales } = res;
   paintStatus();
   renderFish(res);
+  renderLookup();
 
   const best = rows.find(e => e.profit > 0);
   const profitable = rows.filter(e => e.profit > 0).length;
@@ -459,6 +461,77 @@ function renderFish(res) {
   $("#fishHidden").textContent = f.tooLow ? `${f.tooLow} spots need more fishing skill (or a better lure).` : "";
 }
 
+// --- item lookup --------------------------------------------------------------------------------
+// Any item the bot prices or tracks: its price, listings and units off the AH per day on each house,
+// what you'd get selling it on yours, and the recipes that make or use it.
+let NAMES = null; // lowercased name -> item id
+function lookupIndex() {
+  if (NAMES) return NAMES;
+  NAMES = new Map();
+  const ids = new Set();
+  for (const src of [PRICES?.factions, SALES?.factions]) for (const f of Object.values(src || {})) for (const id of Object.keys(f.items || {})) ids.add(+id);
+  for (const id of ids) { const n = ITEMS[id]?.n; if (n && !NAMES.has(n.toLowerCase())) NAMES.set(n.toLowerCase(), id); }
+  $("#lookupList").innerHTML = [...NAMES.values()].map(id => ITEMS[id].n).sort().map(n => `<option value="${esc(n)}">`).join("");
+  return NAMES;
+}
+function renderLookup() {
+  const out = $("#lookupOut"), q = state.lookup.trim();
+  if (!PRICES) return;
+  lookupIndex(); // fills the suggestions
+  if (!q) { out.innerHTML = ""; return; }
+  const id = lookupIndex().get(q.toLowerCase());
+  if (!id) { out.innerHTML = `<p class="hint">Pick an item from the list. Only items the price bot tracks (reagents, crafted items, fish) are in it.</p>`; return; }
+  const it = ITEMS[id] || {};
+  const houses = [state.faction, state.faction === "horde" ? "alliance" : "horde", "neutral"].filter(f => PRICES.factions[f]);
+  const vs = (now, then, fmt) => then == null ? "" : `${fmt(then)}${now != null && then > 0 ? ` <span class="${now >= then ? "pos" : "neg"}">${now >= then ? "▲" : "▼"}${Math.abs(Math.round((now / then - 1) * 100))}%</span>` : ""}`;
+  const rowsH = houses.map(f => {
+    const book = makeBook(PRICES, f, false), ss = salesStats(SALES, [f], MIN_HOURS), s = ss.stat(id);
+    const t = TRENDS?.factions?.[f]?.[id] || [];
+    const min = minPrice(book, id), n = listed(book, id);
+    const days = ss.ok ? (s.perDay > 0 ? n / s.perDay : n > 0 ? Infinity : 0) : null;
+    const g = c => gold(Math.round(c));
+    return `<tr${f === state.faction ? ` class="you"` : ""}>
+      <td>${esc(PRICES.factions[f].house.name)}${f === state.faction ? " <small class=\"muted\">yours</small>" : ""}</td>
+      <td class="num">${min != null ? gold(min) : "—"}</td>
+      <td class="num">${t[0] != null ? g(t[0]) : "—"}${t[1] != null || t[2] != null ? `<small>24 h ago ${vs(t[0], t[1], g) || "—"}</small><small>3 d ago ${vs(t[0], t[2], g) || "—"}</small>` : ""}</td>
+      <td class="num">${n0(n)}${t[4] != null || t[5] != null ? `<small>24 h ago ${vs(n, t[4], n0) || "—"}</small><small>3 d ago ${vs(n, t[5], n0) || "—"}</small>` : ""}</td>
+      <td class="num">${ss.hours ? rate(s.perDay) : "—"}<small>${n0(s.units)} in ${Math.round(ss.hours)} h</small></td>
+      <td class="num">${s.avg != null ? g(s.avg) : "—"}</td>
+      <td class="num">${days == null ? "—" : rate(days)}</td></tr>`;
+  }).join("");
+
+  const env = { sellBook: makeBook(PRICES, state.faction, false), sales: salesStats(SALES, [state.faction], MIN_HOURS) };
+  const m = sellModel(id, env), ahWins = m.net != null && m.net > m.vend;
+  const tr = trend(id);
+  const tiles = `<div class="plan-sum">
+    <div class="pick"><span class="eyebrow">You get each</span><b>${ahWins ? gold(m.net) : m.vend ? gold(m.vend) : "—"}</b><small>${ahWins ? `on your AH after the cut and deposits${m.tr && m.tr.perDay < 0 ? `, ${m.tr.src.includes("3 days") ? "3-day" : "recent"} fall projected a day ahead` : ""}` : m.vend ? "vendor price (pays more than the AH)" : "no price"}</small></div>
+    <div><span class="eyebrow">You could sell / day</span><b>${ahWins ? rate(m.demand) : m.vend ? "any" : "—"}</b><small>${ahWins ? (m.unreliable ? "too few units off the AH to trust" : `at your ${pct(state.share)} share${m.guess ? ", guessed from listings" : ""}`) : m.vend ? "to the vendor" : ""}</small></div>
+    <div><span class="eyebrow">Off your AH / day</span><b>${env.sales.hours ? rate(env.sales.stat(id).perDay) : "—"}</b><small>bought or cancelled, at most this many sold</small></div>
+    <div><span class="eyebrow">Price trend</span><b>${tr ? `${tr.pct > 0 ? "+" : tr.pct < 0 ? "−" : ""}${Math.abs(Math.round(tr.pct * 100))}%` : "—"}</b><small>${!tr ? "no history yet" : tr.src.startsWith("market price, last 3") ? `in 24 h · ${tr.perDay > 0 ? "+" : tr.perDay < 0 ? "−" : ""}${Math.abs(Math.round(tr.perDay * 100))}%/day over 3 days` : esc(tr.src)}</small></div></div>`;
+
+  const made = [], used = [];
+  for (const r of RECIPE.values()) {
+    if (r.item === id) made.push(r);
+    const q2 = r.reagents.find(([x]) => x === id);
+    if (q2) used.push([r, q2[1]]);
+  }
+  const byProf = (a, b) => a.prof.localeCompare(b.prof) || a.learn - b.learn;
+  const MAX = 14, more = n => n > MAX ? `<li class="muted"><span>and ${n - MAX} more</span></li>` : "";
+  const recipe = (r, q3) => `<li><span>${r.item ? wh(r.item, r.name) : esc(r.name)}${q3 ? ` <small class="muted">needs ${q3}</small>` : ""}</span><b>${esc(r.prof)} ${r.learn}</b></li>`;
+  const uses = made.length || used.length ? `<div class="mm-detail mm-lookup-uses">
+    ${made.length ? `<div><h3>Made by</h3><ul class="mm-kv">${made.sort(byProf).slice(0, MAX).map(r => `<li><span>${r.reagents.map(([x, k]) => `${k} ${esc(ITEMS[x]?.n || x)}`).join(", ")}${r.qty > 1 ? ` → ${r.qty}` : ""}</span><b>${esc(r.prof)} ${r.learn}</b></li>`).join("")}${more(made.length)}</ul></div>` : ""}
+    ${used.length ? `<div><h3>Used in (${used.length})</h3><ul class="mm-kv">${used.sort((a, b) => byProf(a[0], b[0])).slice(0, MAX).map(([r, k]) => recipe(r, k)).join("")}${more(used.length)}</ul></div>` : ""}
+  </div>` : "";
+
+  out.innerHTML = `<h3 class="mm-lookup-name">${wh(id, it.n || String(id))}${it.s ? ` <small class="muted">vendor sells for ${gold(it.s)}</small>` : ""}</h3>
+    ${tiles}
+    <div class="table-scroll"><table class="mm mm-ah">
+      <thead><tr><th>Auction house</th><th class="num">Cheapest</th><th class="num" title="Average of the cheapest 10% of listed units">Market price</th><th class="num">Listed</th>
+      <th class="num" title="Listings that vanished before they could expire: bought, or cancelled by the seller">Off the AH / day</th><th class="num" title="Average price of the units taken off the AH">Avg price taken</th><th class="num" title="Units listed ÷ units off the AH per day">Days of supply</th></tr></thead>
+      <tbody>${rowsH}</tbody></table></div>
+    ${uses}`;
+}
+
 function paintStatus() {
   const s = SALES?.updated ? ` · sales ${ago(SALES.updated)}` : "";
   $("#status").classList.remove("err");
@@ -482,6 +555,7 @@ function paintProfs() {
 function bind() {
   bindFaction(state, render);
   const set = (k, v, key = "mm:" + k) => { state[k] = v; store.set(key, v); render(); };
+  $("#lookup").oninput = e => { state.lookup = e.target.value; store.set("mm:lookup", state.lookup); renderLookup(); };
   $("#share").onchange = e => set("share", Number(e.target.value));
   $("#minprofit").oninput = e => store.set("mm:minProfitV2", true) || set("minProfit", Math.max(0, Number(e.target.value) || 0));
   $("#minmargin").oninput = e => set("minMargin", Math.max(0, Number(e.target.value) || 0));
@@ -536,7 +610,7 @@ async function refresh() {
   if (document.hidden) return;
   const before = PRICES?.updated;
   try { await fetchData(); } catch (e) { console.warn("refresh failed", e); return; }
-  if (PRICES.updated !== before) render(); else paintStatus();
+  if (PRICES.updated !== before) { NAMES = null; render(); } else paintStatus();
 }
 
 async function load() {
@@ -553,7 +627,7 @@ async function load() {
     $("#minprofit").value = state.minProfit; $("#minmargin").value = state.minMargin; $("#time").value = state.time; $("#minsales").value = state.minSales;
     $("#patterns").value = state.patterns; $("#sort").value = state.sort; $("#ownmode").value = state.ownMode;
     $("#neutral").checked = state.neutral; $("#rare").checked = state.rare; $("#risky").checked = state.risky; $("#all").checked = state.all;
-    $("#fishhours").value = state.fishHours; $("#castsec").value = state.castSec; $("#pole").value = String(state.pole); $("#level").value = state.level; $("#fishuse").value = state.fishUse;
+    $("#fishhours").value = state.fishHours; $("#castsec").value = state.castSec; $("#pole").value = String(state.pole); $("#level").value = state.level; $("#fishuse").value = state.fishUse; $("#lookup").value = state.lookup;
     paintProfs(); bind(); render();
     setInterval(refresh, REFRESH_MS);
     setInterval(() => PRICES && paintStatus(), 60e3);
