@@ -602,8 +602,8 @@ function sellInfo(st, p) {
   const ahBetter = st.ah > st.vendor;
   const made = st.r.qty * st.crafts, rate = p.stat(st.r.item).perDay;
   const note = !p.salesInfo.ok ? (st.onAh ? `${st.onAh}/${made} on AH · guess from listings${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}` : "not listed")
-    : st.onAh ? `${st.onAh}/${made} on AH · sells ~${perDay(rate)}/day${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
-    : rate > 0 ? `sells ~${perDay(rate)}/day, not above vendor` : "none sold";
+    : st.onAh ? `${st.onAh}/${made} on AH · ~${perDay(rate)}/day off the AH${st.ah > st.cost ? ' · <span class="profit">profit</span>' : ""}`
+    : rate > 0 ? `~${perDay(rate)}/day off the AH, not above vendor` : "none sold";
   const tr = p.trend(st.r.item);
   const falling = tr && tr.perDay < -0.03 ? ` · price falling ${trendLabel(tr, true)}, priced for when you'd sell` : "";
   return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note: note + falling };

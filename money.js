@@ -342,7 +342,7 @@ function detail(e, sales) {
        <li>Net per unit<b>${gold(e.ahNet)}</b></li>
        ${e.vend ? `<li class="muted"><span>Vendor would pay</span><b>${gold(e.vend)}</b></li>` : ""}`;
   const market = e.toVendor ? `<li>Vendors buy any amount; assumed ${VENDOR_CRAFTS} crafts/day${e.supplyCap != null ? `, capped at ${e.supplyCap} by AH reagents` : ""}.</li>`
-    : `<li>${e.guess ? "Guessed demand (¼ of listed)" : `Sold per day (${Math.round(sales.hours)} h of history)`}<b>${rate(e.perDay)}</b></li>
+    : `<li>${e.guess ? "Guessed demand (¼ of listed)" : `Taken off the AH per day: bought or cancelled (${Math.round(sales.hours)} h of history)`}<b>${rate(e.perDay)}</b></li>
        ${e.supplyDays != null ? `<li>Days of supply on the AH<b>${rate(e.supplyDays)}</b></li>` : ""}
        <li>Your share${e.share < state.share ? " (reduced by competition)" : ""}<b>${pct(e.share)}</b></li>
        <li>Crafts per day<b>${rate(e.crafts)}</b></li>`;
@@ -392,7 +392,7 @@ function render() {
       ...e.flags.map(([t, k, why]) => `<span class="mm-flag ${k}" title="${esc(why)}">${t}</span>`),
     ].join(" ");
     const market = e.toVendor ? `<span class="muted">vendor</span>`
-      : `${rate(e.perDay)}/day${e.guess ? "*" : ""}<small>${n0(e.nListed)} listed${e.supplyDays != null && e.nListed ? ` · ${rate(e.supplyDays)} d` : ""}</small>`;
+      : `<span title="Units taken off the AH per day: bought, or cancelled by the seller (the API can't tell them apart)">${rate(e.perDay)}/day off AH</span>${e.guess ? "*" : ""}<small>${n0(e.nListed)} listed${e.supplyDays != null && e.nListed ? ` · ${rate(e.supplyDays)} d` : ""}</small>`;
     return `<tr class="row${open ? " open" : ""}${e.profit <= 0 ? " mm-loss" : ""}" data-id="${r.id}" tabindex="0" aria-expanded="${open}">
       <td><div class="crate"><span class="caret">▸</span><div><b>${wh(e.id, r.name)}</b><div class="meta mm-tags">${tags}</div></div></div></td>
       <td class="num">${gold(e.sellUnit)}${arrow(e.tr)}<small>${e.toVendor ? "vendor price" : `you get · ${e.st.avg != null && e.minList != null && e.st.avg < e.minList ? "sold avg" : e.minList != null ? "listed" : "sold avg"} ${gold(e.today)}`}</small></td>
