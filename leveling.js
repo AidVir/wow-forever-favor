@@ -25,6 +25,7 @@ const state = {
   pole: store.get("lv:pole", 0),
   hourValue: store.get("lv:hourValue", 10),
   cookCatch: store.get("lv:cookCatch", true), // Fishing + Cooking: cook what you catch before buying anything
+  owned: store.get("lv:owned", ""), // "Materials I already have": pasted "20x Linen Cloth" lines
 
 };
 let PRICES, REC, ITEMS, FISH, FISH_IDS = new Set(); // FISH_IDS: everything fishing can catch
@@ -324,6 +325,7 @@ function plan(future = null, usage = null, cookWant = null) {
   // --- inventory: what earlier steps made; later steps use it before buying more ---------------
   // Each lot remembers the sale credit already counted for it, so using it undoes that credit.
   const lots = new Map(); // item id -> [{st, n, vend, ah, onAh}] (credit per unit)
+  seedOwned(lots); // "Materials I already have": free lots, first in line, so every step uses them before buying
   const inv = {
     qty: id => (lots.get(id) || []).reduce((a, l) => a + l.n, 0),
     // what a unit is worth if kept and sold instead (the cost of using it)
@@ -338,9 +340,10 @@ function plan(future = null, usage = null, cookWant = null) {
       l.n -= k; n -= k;
       l.st.vendor -= k * l.vend; l.st.ah -= k * l.ah; l.st.onAh -= k * l.onAh;
       resaleVendor -= k * l.vend; resaleAh -= k * l.ah;
-      sales.unsell(id, k, k * l.onAh);
+      if (!l.owned) sales.unsell(id, k, k * l.onAh); // your own materials were never counted as sold
       l.st.kept += k;
-      if (user && user !== l.st) user.used.set(id, (user.used.get(id) || 0) + k);
+      if (l.owned) takeOwned(l.st, user, id, k);
+      else if (user && user !== l.st) user.used.set(id, (user.used.get(id) || 0) + k);
     }
   }
   // the output of n crafts of a step goes to the inventory, counted as sold unless a later step uses it
@@ -694,6 +697,7 @@ function renderFish(p) {
 
 function render() {
   if (!PRICES || !REC) return;
+  syncHash(); // keep the address bar's share link in step with the settings
   const prof = profData();
   $("#market").textContent = `${PRICES.region} · ${PRICES.ruleset.name} · ${PRICES.factions[state.faction].house.name}${state.neutral ? " + Blackwater" : ""}`;
   // station toggles for this profession
@@ -760,6 +764,7 @@ function render() {
     // inventory: made here and used later / made earlier and used here
     const used = [...st.used.entries()].map(([id, n]) => `${n} × ${esc(ITEMS[id]?.n || id)}`);
     const kept = Math.round(st.kept);
+    const fromBags = bagsTag(st); // "Materials I already have" this step uses
     const name = r.item ? wh(r.item, r.name) : esc(r.name);
     const s = sellInfo(st, p);
     const vend = !showVend ? "" : !s ? `<td class="num c-vend"><span class="muted">—</span></td>`
@@ -769,7 +774,7 @@ function render() {
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${learnTag(st)}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
-        toolsGot.length || kept || used.length ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
+        toolsGot.length || kept || used.length || fromBags ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${fromBags}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? (r.source === "trainer" ? "training " : "pattern ") + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${vend}${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
@@ -818,6 +823,7 @@ function render() {
   $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}${split ? `<small>${e.pre === e.ah + e.vendor ? "all before skill 225" : e.pre ? `${e.pre.toLocaleString("en-GB")} before skill 225` : "only after 225"}</small>` : ""}</td>
       <td class="num">${e.ah ? e.ah.toLocaleString("en-GB") : ""}</td><td class="num">${e.vendor ? e.vendor.toLocaleString("en-GB") : ""}</td>
       <td class="num">${e.ah ? `${listed(makeBook(PRICES, state.faction, state.neutral), e.id).toLocaleString("en-GB")} listed` : `vendor ${gold(ITEMS[e.id]?.v)}`}</td></tr>`).join("");
+  renderOwned(); // "have N" on the shopping list, owned items the route needs but doesn't buy, the box's hint
   $("#excl").innerHTML = state.excluded.size ? `Excluded: ${[...state.excluded].map(id => { const r = prof.recipes.find(x => x.id === id); return r ? `<button class="chip" data-unex="${id}">${esc(r.name)} ✕</button>` : ""; }).join(" ")}` : "";
   $("#perf").textContent = `Planned in ${Math.round(performance.now() - t0)} ms`;
 }
@@ -859,6 +865,165 @@ function bind() {
   $("#excl").onclick = e => { const id = Number(e.target.dataset?.unex); if (id) { state.excluded.delete(id); store.set("lv:excluded", [...state.excluded]); render(); } };
 }
 
+// --- materials I already have ---------------------------------------------------------------
+// Pasted lines ("20x Linen Cloth", "Linen Cloth x20", "Linen Cloth 20", "20 Linen Cloth") become inventory
+// lots worth nothing (you own them already), put first in line by plan(), so steps use them before vendor,
+// AH or crafting. BAGS records what the last plan() took from them (render's second pass, the one shown).
+let NAME_IDX = null, OWNED_CACHE = null, BAGS = null;
+const normName = s => String(s).toLowerCase().replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim();
+function nameIndex() {
+  if (NAME_IDX) return NAME_IDX;
+  const reagents = new Set(REC.professions.flatMap(p => p.recipes.flatMap(r => r.reagents.map(([id]) => id))));
+  NAME_IDX = new Map();
+  for (const [k, it] of Object.entries(ITEMS)) {
+    if (!it?.n) continue;
+    const id = Number(k), key = normName(it.n), cur = NAME_IDX.get(key);
+    if (cur == null || (!reagents.has(cur) && reagents.has(id))) NAME_IDX.set(key, id); // same name twice: the one recipes use
+  }
+  return NAME_IDX;
+}
+// -> {items: Map(item id -> units), bad: [lines that match no item]}
+function parseOwned(text) {
+  const idx = nameIndex(), items = new Map(), bad = [];
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.replace(/^[\s\-*•·]+/, "").replace(/[[\]]/g, "").trim();
+    if (!line) continue;
+    const tries = [
+      [/^(\d+)\s*[x×*]\s*(.+)$/i, 2, 1], // 20x Linen Cloth
+      [/^(\d+)\s+(.+)$/, 2, 1], // 20 Linen Cloth
+      [/^(.+?)\s*[x×*]\s*(\d+)$/i, 1, 2], // Linen Cloth x20
+      [/^(.+?)(?:\s*[:,;=\t]\s*|\s+)(\d+)$/, 1, 2], // Linen Cloth 20, Linen Cloth: 20
+    ];
+    let hit = null;
+    for (const [re, ni, qi] of tries) {
+      const m = line.match(re); if (!m) continue;
+      const id = idx.get(normName(m[ni])), q = Number(m[qi]);
+      if (id != null && q > 0) { hit = [id, Math.min(q, 1e6)]; break; }
+    }
+    if (!hit && idx.has(normName(line))) hit = [idx.get(normName(line)), 1]; // a name alone counts as 1
+    if (hit) items.set(hit[0], (items.get(hit[0]) || 0) + hit[1]);
+    else bad.push(raw.trim());
+  }
+  return { items, bad };
+}
+function ownedParsed() {
+  if (!ITEMS || !REC) return { items: new Map(), bad: [] };
+  if (OWNED_CACHE?.text !== state.owned) OWNED_CACHE = { text: state.owned, ...parseOwned(state.owned) };
+  return OWNED_CACHE;
+}
+// plan(): put the owned units in the inventory before anything else (no sale credit to give up)
+function seedOwned(lots) {
+  BAGS = { bags: true, vendor: 0, ah: 0, onAh: 0, kept: 0, used: new Map(), taken: new Map() };
+  for (const [id, n] of ownedParsed().items) lots.set(id, [{ st: BAGS, n, vend: 0, ah: 0, onAh: 0, owned: true }]);
+}
+// plan()'s takeInv: k owned units of id went to step `user` (null for tools)
+function takeOwned(bags, user, id, k) {
+  bags.taken.set(id, (bags.taken.get(id) || 0) + k);
+  if (user) (user.bags ||= new Map()).set(id, (user.bags.get(id) || 0) + k);
+}
+function bagsTag(st) {
+  if (!st.bags?.size) return "";
+  return `<span class="tag bags">uses ${[...st.bags].map(([id, n]) => `${n.toLocaleString("en-GB")} × ${esc(ITEMS[id]?.n || id)}`).join(", ")} from your bags</span> `;
+}
+// Shopping list: "have N" next to bought items, rows for owned items the route needs but doesn't buy;
+// and the hint under the box (what was recognised, what the route uses, lines that match nothing).
+function renderOwned() {
+  const { items, bad } = ownedParsed();
+  const taken = BAGS?.taken || new Map();
+  const tbody = $("#shop");
+  const cols = tbody.closest("table")?.querySelectorAll("thead th").length || 4;
+  const n0 = x => x.toLocaleString("en-GB");
+  const extra = [];
+  for (const [id, n] of taken) {
+    const have = items.get(id) || 0;
+    const note = `<small class="pos">have ${n0(have)}${n < have ? `, the route uses ${n0(n)}` : ""}</small>`;
+    const a = tbody.querySelector(`a[href="https://www.wowhead.com/forever/item=${id}"]`);
+    if (a) a.closest("td").insertAdjacentHTML("beforeend", note);
+    else extra.push(`<tr class="owned-row"><td>${wh(id, ITEMS[id]?.n || id)}${note}</td><td colspan="${cols - 1}"><span class="muted">nothing to buy</span></td></tr>`);
+  }
+  tbody.insertAdjacentHTML("beforeend", extra.join(""));
+  const unused = [...items.keys()].filter(id => !taken.has(id)).map(id => esc(ITEMS[id]?.n || id));
+  const more = (list, k) => list.slice(0, k).join(", ") + (list.length > k ? ` and ${list.length - k} more` : "");
+  const parts = [];
+  if (items.size) parts.push(`${items.size} item${items.size === 1 ? "" : "s"} recognised, ${taken.size ? `${taken.size} used by this route` : "none used by this route"}.`);
+  if (unused.length && taken.size) parts.push(`Not used: ${more(unused, 8)}.`);
+  if (bad.length) parts.push(`<span class="neg">No item called: ${more(bad.map(esc), 6)}.</span>`);
+  $("#ownedHint").innerHTML = parts.join(" ");
+}
+
+// --- share link: the plan's settings in the address (#p=Tailoring&from=1&to=300&…) -----------------
+// Opening such a link overrides the saved settings (and saves them). Owned materials go in only while the
+// list is short; without "own" in the link the reader's own list stays. Crafting stations aren't included.
+const POLES = [0, 5, 20, 25, 35];
+const isPlanHash = h => /(^|&)p=/.test(h);
+let HASH_LIVE = false; // the first render writes the address only when the page was opened with a plan link
+function ownedHashPart() {
+  const s = [...ownedParsed().items].map(([id, n]) => `${id}x${n}`).join(".");
+  return s && s.length <= 600 ? s : null;
+}
+function planHash() {
+  const q = new URLSearchParams({ p: state.prof, from: state.from, to: state.to, sell: state.sell, pat: state.patterns, f: state.faction,
+    lvl: state.level, t: state.time, wait: state.wait, fast: +state.fast, mine: +state.mining, bw: +state.neutral });
+  if (fishMode()) { q.set("ff", state.ffrom); q.set("ft", state.fto); q.set("pole", state.pole); q.set("cast", state.castSec); q.set("hv", state.hourValue); q.set("cook", +state.cookCatch); }
+  if (state.excluded.size) q.set("ex", [...state.excluded].join("."));
+  const own = ownedHashPart(); if (own) q.set("own", own);
+  return q.toString();
+}
+function syncHash() {
+  if (!HASH_LIVE) { HASH_LIVE = true; if (!isPlanHash(location.hash.slice(1))) return; }
+  const h = "#" + planHash();
+  if (location.hash !== h) history.replaceState(history.state, "", h); // no history entry per change
+}
+function applyHash() {
+  const raw = location.hash.slice(1);
+  if (!isPlanHash(raw)) return;
+  const q = new URLSearchParams(raw);
+  const has = k => q.has(k) && q.get(k) !== "";
+  const num = (k, lo, hi, int = true) => { if (!has(k)) return null; const v = Number(q.get(k)); return isFinite(v) ? Math.max(lo, Math.min(hi, int ? Math.round(v) : v)) : null; };
+  const pick = (k, list) => list.includes(q.get(k)) ? q.get(k) : null;
+  const bool = k => has(k) ? q.get(k) === "1" : null;
+  const put = (k, v, key = "lv:" + k) => { if (v == null) return; state[k] = v; store.set(key, v); };
+  const names = [...REC.professions.filter(p => p.name !== "Mining").map(p => p.name), FISHING, FISH_COOK];
+  put("prof", pick("p", names));
+  put("from", num("from", 1, 299)); put("to", num("to", 2, 300));
+  put("sell", pick("sell", ["ah", "vendor", "none"]));
+  const pat = pick("pat", ["buyable", "vendor", "trainer", "all"]);
+  if (pat) { store.set("lv:patternsV2", true); put("patterns", pat); }
+  put("faction", pick("f", ["alliance", "horde"]), "faction");
+  put("level", num("lvl", 1, 60)); put("time", num("t", 0, 1e6, false));
+  const w = num("wait", 1, 7); put("wait", [1, 3, 7].includes(w) ? w : null);
+  put("fast", bool("fast")); put("mining", bool("mine")); put("neutral", bool("bw"), "neutral");
+  put("ffrom", num("ff", 1, 299)); put("fto", num("ft", 2, 300));
+  const pole = num("pole", 0, 35); put("pole", POLES.includes(pole) ? pole : null);
+  put("castSec", num("cast", 5, 40)); put("hourValue", num("hv", 0, 1e6, false)); put("cookCatch", bool("cook"));
+  state.excluded = new Set((q.get("ex") || "").split(".").map(Number).filter(n => n > 0)); // the link's exclusions, or none
+  store.set("lv:excluded", [...state.excluded]);
+  // the link's materials are shown but not saved over your own list until you edit the box
+  if (has("own")) state.owned = q.get("own").split(".").map(x => x.split("x").map(Number))
+    .filter(([id, n]) => ITEMS[id]?.n && n > 0).map(([id, n]) => `${n}x ${ITEMS[id].n}`).join("\n");
+}
+async function copyPlanLink() {
+  const url = location.href.split("#")[0] + "#" + planHash();
+  HASH_LIVE = true; history.replaceState(history.state, "", url);
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch { /* no clipboard access: show the link instead */ }
+  const ownNote = ownedParsed().items.size && !ownedHashPart() ? " Your materials list is too long for a link, so it isn't included." : "";
+  $("#shareMsg").innerHTML = ok ? `Link copied: it opens this plan, priced with the auction house of that moment.${ownNote}`
+    : `Copy this link: <a href="${esc(url)}">${esc(url)}</a>${ownNote}`;
+}
+// the "Materials I already have" box, the share button, and pasted plan links in the same tab
+function bindPlanExtras() {
+  const box = $("#owned");
+  box.value = state.owned;
+  let timer = 0;
+  box.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { state.owned = box.value; store.set("lv:owned", box.value); render(); }, 400);
+  };
+  $("#shareLink").onclick = copyPlanLink;
+  addEventListener("hashchange", () => { const h = location.hash.slice(1); if (isPlanHash(h) && h !== planHash()) location.reload(); });
+}
+
 // The bot publishes new prices about hourly. Re-planning by itself would move the route under the
 // reader, so offer it instead.
 async function checkForNewPrices() {
@@ -883,6 +1048,7 @@ async function load() {
     ITEMS = REC.items;
     for (const [id, it] of Object.entries(FISH.items)) ITEMS[id] ||= it; // fish, lures and junk that no recipe uses
     FISH_IDS = new Set([...FISH.spots.flatMap(sp => sp.fish.map(f => f[0])), 13755, 13756]);
+    applyHash(); bindPlanExtras(); // a shared link's settings override the saved ones
     $("#wait").value = state.wait;
     const names = [...REC.professions.filter(p => p.name !== "Mining").map(p => p.name), FISHING, FISH_COOK];
     if (!names.includes(state.prof)) state.prof = names[0];

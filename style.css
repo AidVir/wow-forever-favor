@@ -535,3 +535,18 @@ table.steps tr.train .meta { display: block; margin-top: 2px; }
 /* leveling: how a step's recipe is learned */
 .tag.learn { color: var(--muted); }
 .tag.learn.train { color: var(--text); border-color: var(--line-strong); }
+
+/* leveling: materials I already have + share link */
+.owned-ctl .ctl.owned { flex: 1 1 360px; max-width: 640px; }
+.owned .hint { margin: 0; }
+textarea {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--surface-2); width: 100%; min-height: 96px; resize: vertical;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 12px;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+textarea:hover { border-color: var(--accent); }
+textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background-color: var(--surface); }
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.share-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.share-msg { font-size: var(--fs-xs); color: var(--muted); }
+.tag.bags { color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }

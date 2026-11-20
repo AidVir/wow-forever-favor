@@ -173,6 +173,17 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - **The rest** is vendored. Vendor credit is capped at 75% of cost in route scoring.
 - **Scoring of profitable crafts:** a craft that makes money is scored by its profit per craft, not
   divided by its skill-up chance. Otherwise low-chance crafts win.
+- **Materials I already have** (`lv:owned`, a textarea under More options): `parseOwned()` reads
+  `20x Linen Cloth` / `Linen Cloth x20` / `Linen Cloth 20` / `20 Linen Cloth` lines (case-insensitive item
+  names from `recipes.json`; a duplicate name prefers the id recipes use). `seedOwned()` puts them first in
+  `lots` as free lots (`owned: true`, no sale credit, so `takeInv` skips `unsell`); steps show "uses N from
+  your bags", `renderOwned()` adds "have N" to the shopping list and lists unmatched lines under the box.
+- **Share link:** `planHash()` puts the settings in the URL hash (`#p=Tailoring&from=1&to=300&sell=ah&pat=…&f=…
+  &lvl=…&t=…&wait=…&fast=…&mine=…&bw=…`, fishing `ff ft pole cast hv cook` in fishing modes, `ex` excluded
+  recipe ids, `own=id x qty` joined by `.` when under 600 chars). `applyHash()` on load overrides and saves
+  the settings (a link without `own` keeps the reader's own list; without `ex`, nothing is excluded);
+  `syncHash()` in `render()` keeps the address current with `history.replaceState` once a plan hash exists or
+  after the first change. Crafting stations aren't in the link. "Copy link to this plan" copies it.
 - **Sign convention in the UI:** profit is `+` (green, `.pos`) and loss is `−` (red, `.neg`), via
   `pl()`. Plain costs stay unsigned.
 
