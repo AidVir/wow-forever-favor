@@ -3,6 +3,9 @@
    same few components (header, intro, hero, panels, controls, tables, footer), so one stylesheet stays
    small and fast. Token and class names are shared with the JS and other pages: add, don't rename. */
 
+/* `hidden` must win over component display rules (.ctl is grid, fieldset.profs is flex) */
+[hidden] { display: none !important; }
+
 /* ---------- tokens ---------- */
 :root {
   --bg: #f4efe4;

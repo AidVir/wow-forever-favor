@@ -23,6 +23,7 @@ const RARE_STATIONS = new Set(["Black Anvil", "Black Forge", "Arcane Forge", "Mo
 const HERBS = new Set([2447, 765, 2449, 785, 2450, 2452, 2453, 3355, 3356, 3357, 3358, 3369, 3818, 3819, 3820, 3821, 4625, 8153, 8831, 8836, 8838, 8839, 8845, 8846, 13463, 13464, 13465, 13466, 13467, 13468, 19726, 248821, 248822, 248823, 249274, 249399, 249424]);
 const STONES_GEMS = new Set([2835, 2836, 2838, 7912, 12365, 774, 818, 1206, 1210, 1529, 1705, 3864, 7909, 7910, 12361, 12364, 12799, 12800]);
 const CLOTH = new Set([2589, 2592, 4306, 4338, 14047, 14256]);
+let EFF_POLE = null; // fishing pole bonus usable at the character level (fitPole)
 let FISH = null, FISHED = new Set(); // data/fishing.json; item ids that fishing catches
 function gatherKind(id) {
   const n = ITEMS[id]?.n || "";
@@ -262,7 +263,7 @@ function fishCompute(res) {
     const sp = spots[0], yieldPer = spotYield(sp);
     let best = null;
     for (const o of lureOptions(FISH, res.book, skill)) {
-      const p = catchChance(sp, skill + state.pole + o.bonus);
+      const p = catchChance(sp, skill + (EFF_POLE ?? state.pole) + o.bonus);
       if (p <= 0) continue;
       const catches = 3600 / sec * p * hours; // per day
       const { items, gross } = sell(yieldPer, catches, state.fishUse);
@@ -366,8 +367,8 @@ function render() {
   const t0 = performance.now();
   $("#market").textContent = `${PRICES.region} · ${PRICES.ruleset.name} · ${PRICES.factions[state.faction].house.name}`;
   // a pole the character level can't equip falls back to the best one it can
-  const pole = fitPole($("#pole"), state.level, state.pole);
-  if (pole !== state.pole) { state.pole = pole; store.set("mm:pole", pole); }
+  // the pole this character can equip (the saved choice stays, so raising the level brings it back)
+  EFF_POLE = fitPole($("#pole"), state.level, state.pole);
   const res = compute();
   const { rows, hidden, sales } = res;
   paintStatus();

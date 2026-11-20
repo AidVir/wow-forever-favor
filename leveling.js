@@ -125,6 +125,7 @@ let BOOK0 = {};
 // Stations listed under "Crafting stations I can use" for the current profession and range (set by render()).
 // A station that isn't listed isn't needed by any recipe the route can use, so its saved "off" doesn't block.
 let SHOWN_STATIONS = null;
+let EFF_POLE = null; // fishing pole bonus usable at the character level (fitPole)
 function allowed(r, stations = true) {
   if (state.excluded.has(r.id)) return false;
   if (stations && r.needs && state.stationsOff.has(r.needs) && (!SHOWN_STATIONS || SHOWN_STATIONS.has(r.needs))) return false;
@@ -315,7 +316,7 @@ function fishRoute(sales, want, cookWant = null) {
     let best = null, here = null;
     const perCatch = new Map(spots.map(sp => [sp, perCatchNow(sp)]));
     for (const sp of spots) for (const o of opts) {
-      const p = catchChance(sp, s + Number(state.pole || 0) + o.bonus);
+      const p = catchChance(sp, s + Number(EFF_POLE ?? state.pole ?? 0) + o.bonus);
       if (p <= 0) continue;
       const casts = cpp / p, hours = casts * sec / 3600;
       const c = { sp, o, p, casts, hours, value: cpp * perCatch.get(sp), lure: hours * o.perHour };
@@ -851,8 +852,8 @@ async function copyText(text) {
 function render() {
   if (!PRICES || !REC) return;
   // a pole the character level can't equip falls back to the best one it can
-  const pole = fitPole($("#pole"), state.level, state.pole);
-  if (pole !== state.pole) { state.pole = pole; store.set("lv:pole", pole); }
+  // the pole this character can equip (the saved choice stays, so raising the level brings it back)
+  EFF_POLE = fitPole($("#pole"), state.level, state.pole);
   syncHash(); // keep the address bar's share link in step with the settings
   const prof = profData();
   $("#market").textContent = `${PRICES.region} · ${PRICES.ruleset.name} · ${PRICES.factions[state.faction].house.name}${state.neutral ? " + Blackwater" : ""}`;
