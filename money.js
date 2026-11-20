@@ -357,7 +357,7 @@ function detail(e, sales) {
       <div><h3>Market</h3><ul class="mm-kv">${market}</ul></div>
     </div>
     ${flags}${pat}
-    <p class="fine">${esc(r.prof)} · learn ${r.learn}${r.est ? " (est.)" : ""} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span>${r.needs ? ` · needs ${esc(r.needs)}` : ""}</p>
+    <p class="fine">${esc(r.prof)}${r.isNew ? " · new in Forever" : ""} · learn ${r.learn}${r.est ? " (est.)" : ""} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span>${r.needs ? ` · needs ${esc(r.needs)}` : ""}</p>
   </td></tr>`;
 }
 
@@ -379,8 +379,7 @@ function render() {
   $("#summary").innerHTML = `
     <div class="pick"><span class="eyebrow">Best by ${{ daily: "profit per day", craft: "profit per craft", margin: "margin" }[state.sort]}</span><b>${best ? (state.sort === "daily" ? pl(best.daily) : state.sort === "craft" ? pl(best.profit) : pct(best.margin)) : "—"}</b><small>${best ? esc(best.r.name) : "nothing profitable with these settings"}</small></div>
     <div><span class="eyebrow">Profitable crafts</span><b>${profitable}</b><small>${state.all ? "showing all" : `above ${state.minProfit}s and ${state.minMargin}%`}</small></div>
-    <div><span class="eyebrow">Sales history</span><b>${SALES ? `${sales.hours < 10 ? sales.hours.toFixed(1) : Math.round(sales.hours)} h` : "—"}</b><small>${sales.ok ? "measured sales per day" : `guessing until ${MIN_HOURS} h`}</small></div>
-    <div><span class="eyebrow">Your share</span><b>${pct(state.share)}</b><small>of each market's daily sales</small></div>`;
+    <div><span class="eyebrow">Sales history</span><b>${SALES ? `${sales.hours < 10 ? sales.hours.toFixed(1) : Math.round(sales.hours)} h` : "—"}</b><small>${sales.ok ? "measured sales per day" : `guessing until ${MIN_HOURS} h`}</small></div>`;
   $("#salesnote").innerHTML = !SALES ? `<p class="warn">Sales data could not be loaded, so demand is guessed from listings.</p>`
     : sales.ok ? (sales.hours < 48 ? `<p class="hint">Sales measured over ${Math.round(sales.hours)} h of snapshots — still a short window, treat daily rates as rough.</p>` : "")
     : `<p class="warn"><b>Not enough sales history yet</b> (${sales.hours.toFixed(1)} of ${MIN_HOURS} h). Demand is guessed as a quarter of the units listed per day and every row is marked <i>guess</i>. Measured sales take over automatically.</p>`;
@@ -388,18 +387,17 @@ function render() {
   const shown = rows.slice(0, SHOW_MAX);
   $("#rows").innerHTML = shown.map(e => {
     const r = e.r, open = state.open.has(r.id);
+    // One quiet line under the name; only warnings get a chip. Info flags and "new in Forever" are in the details.
     const tags = [
-      `<span class="tag">${esc(r.prof)}</span>`,
-      r.qty > 1 ? `<span class="tag">makes ${r.qty}</span>` : "",
-      e.pat ? `<span class="tag pat" title="Learned from a pattern">${e.pat.unknown ? "pattern: no price" : "pattern " + gold(e.pat.cost, { short: true })}</span>` : "",
-      r.needs && RARE_STATIONS.has(r.needs) ? `<span class="tag">${esc(r.needs)}</span>` : "",
-      r.isNew ? `<span class="tag new">new in Forever</span>` : "",
-      ...e.flags.map(([t, k, why]) => `<span class="mm-flag ${k}" title="${esc(why)}">${t}</span>`),
-    ].join(" ");
+      esc(r.prof),
+      r.qty > 1 ? `makes ${r.qty}` : "",
+      e.pat ? `<span class="pat-txt" title="Learned from a pattern">${e.pat.unknown ? "pattern: no price" : "pattern " + gold(e.pat.cost, { short: true })}</span>` : "",
+      r.needs && RARE_STATIONS.has(r.needs) ? `needs ${esc(r.needs)}` : "",
+    ].filter(Boolean).join(" · ") + e.flags.filter(f => f[1] !== "info").map(([t, k, why]) => ` <span class="mm-flag ${k}" title="${esc(why)}">${t}</span>`).join("");
     const market = e.toVendor ? `<span class="muted">vendor</span>`
       : `<span title="Units taken off the AH per day: bought, or cancelled by the seller (the API can't tell them apart)">${rate(e.perDay)}/day off AH</span>${e.guess ? "*" : ""}<small>${n0(e.nListed)} listed${e.supplyDays != null && e.nListed ? ` · ${rate(e.supplyDays)} d` : ""}</small>`;
     return `<tr class="row${open ? " open" : ""}${e.profit <= 0 ? " mm-loss" : ""}" data-id="${r.id}" tabindex="0" aria-expanded="${open}">
-      <td><div class="crate"><span class="caret">▸</span><div><b>${wh(e.id, r.name)}</b><div class="meta mm-tags">${tags}</div></div></div></td>
+      <td><div class="crate"><span class="caret">▸</span><div><b>${wh(e.id, r.name)}</b><div class="meta mm-sub">${tags}</div></div></div></td>
       <td class="num">${gold(e.sellUnit)}${arrow(e.tr)}<small>${e.toVendor ? "vendor price" : `you get · ${e.st.avg != null && e.minList != null && e.st.avg < e.minList ? "sold avg" : e.minList != null ? "listed" : "sold avg"} ${gold(e.today)}`}</small></td>
       <td class="num">${gold(e.cost)}${e.flags.some(f => f[0] === "thin reagents") ? `<small>top ${gold(e.top.cost)}</small>` : ""}</td>
       <td class="num">${pl(e.profit)}<small>${e.cost > 0 ? pct(e.margin) + " margin" : ""}</small></td>
@@ -407,7 +405,7 @@ function render() {
       <td class="num">${e.toVendor ? `${n0(e.crafts * r.qty)}` : rate(e.crafts * r.qty)}<small>${rate(e.crafts)} craft${e.crafts === 1 ? "" : "s"}</small></td>
       <td class="num mm-daily">${pl(e.daily)}</td>
     </tr>${open ? detail(e, sales) : ""}`;
-  }).join("") || `<tr><td colspan="7" class="empty">No crafts match. Try lowering the minimum profit or margin, raising your skill, or ticking “Show unprofitable”.</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="empty">No crafts match. Raise your skill, or lower the filters under More options.</td></tr>`;
 
   const h = [];
   if (rows.length > SHOW_MAX) h.push(`top ${SHOW_MAX} of ${rows.length} shown`);
@@ -449,7 +447,7 @@ function renderFish(res) {
     const how = [ah >= 1 ? `${n0(ah)} AH` : "", cooked >= 1 ? `${n0(cooked)} cooked` : "", vend >= 1 ? `${n0(vend)} vendor` : ""].filter(Boolean).join(" · ");
     const key = sp.name;
     return `<tr class="row${open ? " open" : ""}" data-fish="${esc(key)}" tabindex="0" aria-expanded="${open}">
-      <td><div class="crate"><span class="caret">▸</span><div><b>${esc(sp.name)}</b>${others.length ? ` <small class="muted">or ${others.length} more</small>` : ""}<div class="meta mm-tags"><span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span>${e.o.lure ? ` <span class="tag toolget">${esc(ITEMS[e.o.lure.id]?.n || "lure")} (+${e.o.bonus})</span>` : ""}${away ? ` <span class="mm-flag warn">${away}% get away</span>` : ""}</div><div class="meta">${top}</div>${similar.length ? `<div class="meta">Same catch: ${sameCatchText(FISH, ITEMS, similar, esc)}</div>` : ""}</div></div></td>
+      <td><div class="crate"><span class="caret">▸</span><div><b>${esc(sp.name)}</b>${others.length ? ` <small class="muted">or ${others.length} more</small>` : ""}<div class="meta">${[`level ${sp.levels[0]}–${sp.levels[1]}`, e.o.lure ? `<span class="act-tool">${esc(ITEMS[e.o.lure.id]?.n || "lure")} (+${e.o.bonus})</span>` : "", away ? `${away}% get away` : ""].filter(Boolean).join(" · ")}</div><div class="meta">${top}</div>${similar.length ? `<div class="meta">Same catch: ${sameCatchText(FISH, ITEMS, similar, esc)}</div>` : ""}</div></div></td>
       <td class="num">${n0(e.catches)}<small>${Math.round(e.p * 100)}% catch</small></td>
       <td class="num">${how || "—"}</td>
       <td class="num">${e.lure ? gold(e.lure) : "—"}</td>

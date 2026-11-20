@@ -41,8 +41,8 @@
   <section class="panel settings" aria-label="Route settings">
     <div class="controls">
       <div class="ctl"><label for="prof">Profession</label><select id="prof"></select></div>
-      <div class="ctl"><label for="from" id="fromLbl">From skill</label><input id="from" type="number" min="1" max="299" value="1"></div>
-      <div class="ctl"><label for="to" id="toLbl">To skill</label><input id="to" type="number" min="2" max="300" value="300"></div>
+      <div class="ctl ctl-num"><label for="from" id="fromLbl">From skill</label><input id="from" type="number" min="1" max="299" value="1"></div>
+      <div class="ctl ctl-num"><label for="to" id="toLbl">To skill</label><input id="to" type="number" min="2" max="300" value="300"></div>
       <div class="ctl">
         <label for="sellmode">Plan the route for</label>
         <select id="sellmode">
@@ -59,19 +59,26 @@
         </select>
       </div>
     </div>
-    <details class="more" open>
-      <summary>More options <small>level · recipes · selling time · smelting · stations · materials I have</small></summary>
-      <div class="controls">
-        <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60" aria-describedby="time-help"></div>
-        <div class="ctl">
-          <label for="patterns">Recipes I can use</label>
-          <select id="patterns">
-            <option value="buyable">Trainer + patterns I can buy (AH, vendor, quest)</option>
-            <option value="vendor">Trainer + vendor &amp; quest patterns (no drops)</option>
-            <option value="trainer">Trainer only</option>
-            <option value="all">Trainer + every pattern (I already own them)</option>
-          </select>
+    <details class="more" data-remember="lv-more">
+      <summary>More options <small>level · recipes · selling · materials · stations</small></summary>
+      <div class="opt-group">
+        <h3 class="opt-h">Character &amp; recipes</h3>
+        <div class="controls">
+          <div class="ctl ctl-num"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60" aria-describedby="time-help"></div>
+          <div class="ctl ctl-wide">
+            <label for="patterns">Recipes I can use</label>
+            <select id="patterns">
+              <option value="buyable">Trainer + patterns I can buy (AH, vendor, quest)</option>
+              <option value="vendor">Trainer + vendor &amp; quest patterns (no drops)</option>
+              <option value="trainer">Trainer only</option>
+              <option value="all">Trainer + every pattern (I already own them)</option>
+            </select>
+          </div>
         </div>
+      </div>
+      <div class="opt-group">
+        <h3 class="opt-h">Route &amp; selling</h3>
+        <div class="controls">
         <div class="ctl">
           <label for="wait">Time to sell on the AH</label>
           <select id="wait">
@@ -80,41 +87,50 @@
             <option value="7">7 days</option>
           </select>
         </div>
-        <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="5" aria-describedby="time-help"></div>
-        <div class="ctl">
-          <span class="lbl">Materials</span>
-          <label class="chk"><input id="mining" type="checkbox"> I can smelt bars (Mining)</label>
-          <label class="chk"><input id="neutral" type="checkbox"> Also buy from Blackwater AH</label>
+        <div class="ctl ctl-num"><label for="time">Time per craft (silver)</label><input id="time" type="number" min="0" step="1" value="5" aria-describedby="time-help"></div>
         </div>
-        <fieldset class="ctl profs" id="stationsCtl"><legend>Crafting stations I can use</legend><div id="stations" class="stations"></div></fieldset>
+        <p class="hint" id="time-help">Ranks need character level 10 (past 75), 20 (past 150) and 35 (past 225). Time per craft makes the route prefer fewer crafts.</p>
       </div>
-      <div class="controls fish-ctl" id="fishCtl" hidden>
-        <div class="ctl fish-both"><label for="ffrom">Fishing from skill</label><input id="ffrom" type="number" min="1" max="299" value="1"></div>
-        <div class="ctl fish-both"><label for="fto">Fishing to skill</label><input id="fto" type="number" min="2" max="300" value="300"></div>
-        <div class="ctl">
-          <label for="pole">Fishing pole</label>
-          <select id="pole">
-            <option value="0">Fishing Pole (+0)</option>
-            <option value="5" data-lvl="5">Strong Fishing Pole (+5)</option>
-            <option value="15" data-lvl="20">Ravaged Fishing Pole (+15, level 20)</option>
-            <option value="20" data-lvl="25">Big Iron Fishing Pole (+20, level 25)</option>
-            <option value="25">Nat Pagle's Extreme Angler FC-5000 (+25)</option>
-            <option value="35">Arcanite Fishing Pole (+35)</option>
-          </select>
+      <div class="opt-group">
+        <h3 class="opt-h">Materials</h3>
+        <div class="controls">
+          <div class="ctl">
+            <span class="lbl">I can also</span>
+            <label class="chk"><input id="mining" type="checkbox"> Smelt bars (Mining)</label>
+            <label class="chk"><input id="neutral" type="checkbox"> Buy from Blackwater AH (neutral)</label>
+          </div>
+          <fieldset class="ctl profs" id="stationsCtl"><legend>Crafting stations I can use</legend><div id="stations" class="stations"></div></fieldset>
         </div>
-        <div class="ctl"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
-        <div class="ctl"><label for="hourval">My time is worth (gold / hour)</label><input id="hourval" type="number" min="0" step="1" value="10"></div>
-        <div class="ctl fish-both"><span class="lbl">Fish I catch</span><label class="chk"><input id="cookcatch" type="checkbox" checked> Cook them first, even when selling raw would pay more</label></div>
-      </div>
-      <div class="controls owned-ctl">
-        <div class="ctl owned">
-          <label for="owned">Materials I already have</label>
-          <textarea id="owned" rows="4" spellcheck="false" autocomplete="off" placeholder="20x Linen Cloth&#10;Copper Bar x40&#10;Light Leather 15" aria-describedby="owned-help ownedHint"></textarea>
-          <p class="hint" id="owned-help">One item per line with a count: 20x Linen Cloth, Linen Cloth x20, Linen Cloth 20 or 20 Linen Cloth. The route uses these first and counts them as free.</p>
-          <p class="hint" id="ownedHint" aria-live="polite"></p>
+        <div class="controls owned-ctl">
+          <div class="ctl owned">
+            <label for="owned">Materials I already have</label>
+            <textarea id="owned" rows="3" spellcheck="false" autocomplete="off" placeholder="20x Linen Cloth&#10;Copper Bar x40&#10;Light Leather 15" aria-describedby="owned-help ownedHint"></textarea>
+            <p class="hint" id="owned-help">One item per line with a count. Used first and counted as free.</p>
+            <p class="hint" id="ownedHint" aria-live="polite"></p>
+          </div>
         </div>
       </div>
-      <p class="hint" id="time-help">Character level decides how far you can train: Journeyman (past 75) needs level 10, Expert (past 150) level 20, Artisan (past 225) level 35. Time value adds a cost to every craft, so the route prefers fewer crafts. Time to sell is how long you'll keep relisting crafts on the AH.</p>
+      <div class="opt-group" id="fishCtl" hidden>
+        <h3 class="opt-h">Fishing</h3>
+        <div class="controls fish-ctl">
+          <div class="ctl ctl-num fish-both"><label for="ffrom">Fishing from skill</label><input id="ffrom" type="number" min="1" max="299" value="1"></div>
+          <div class="ctl ctl-num fish-both"><label for="fto">Fishing to skill</label><input id="fto" type="number" min="2" max="300" value="300"></div>
+          <div class="ctl">
+            <label for="pole">Fishing pole</label>
+            <select id="pole">
+              <option value="0">Fishing Pole (+0)</option>
+              <option value="5" data-lvl="5">Strong Fishing Pole (+5)</option>
+              <option value="15" data-lvl="20">Ravaged Fishing Pole (+15, level 20)</option>
+              <option value="20" data-lvl="25">Big Iron Fishing Pole (+20, level 25)</option>
+              <option value="25">Nat Pagle's Extreme Angler FC-5000 (+25)</option>
+              <option value="35">Arcanite Fishing Pole (+35)</option>
+            </select>
+          </div>
+          <div class="ctl ctl-num"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
+          <div class="ctl ctl-num"><label for="hourval">My time (gold / hour)</label><input id="hourval" type="number" min="0" step="1" value="10"></div>
+          <div class="ctl fish-both"><span class="lbl">Fish I catch</span><label class="chk"><input id="cookcatch" type="checkbox" checked> Cook them first, even when raw pays more</label></div>
+        </div>
+      </div>
     </details>
     <div class="share-row">
       <button type="button" class="chip" id="shareLink">Copy link to this plan</button>

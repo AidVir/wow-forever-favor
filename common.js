@@ -165,3 +165,11 @@ export const trendLabel = (tr, perDay = false) => {
   if (v == null || Math.abs(v) < 0.03) return "";
   return `<span class="trend ${v > 0 ? "up" : "down"}" title="${esc(tr.src)}">${v > 0 ? "▲" : "▼"}${Math.abs(Math.round(v * 100))}%${perDay ? "/day" : ""}</span>`;
 };
+
+// <details data-remember="key">: start as the HTML says (collapsed "More options" for first-time visitors),
+// then remember whether this viewer last left it open or closed.
+for (const d of document.querySelectorAll("details[data-remember]")) {
+  const k = "open:" + d.dataset.remember, saved = store.get(k, null);
+  if (saved != null) d.open = saved;
+  d.addEventListener("toggle", () => store.set(k, d.open));
+}

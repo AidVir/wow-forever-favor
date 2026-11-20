@@ -1,4 +1,5 @@
 import { CRATES, ITEMS, RECIPES, ITEM_ID } from "./data/crates.js";
+import "./common.js"; // remembers the "More options" drawer
 
 const $ = s => document.querySelector(s);
 const store = {
