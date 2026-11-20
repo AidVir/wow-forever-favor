@@ -85,7 +85,7 @@ function profData() {
 // with this profession if a recipe is known at the current skill. Returns {cost, plan:[[kind,id,qty]]}.
 function acquire(ctx, id, qty, depth = 0, noAh = false) {
   const have = ctx.inv ? Math.min(qty, ctx.inv.qty(id)) : 0;
-  const invCost = have * (have ? ctx.inv.value(id) : 0);
+  const invCost = have ? ctx.inv.valueOf(id, have) : 0;
   if (have === qty) return { cost: invCost, plan: [["inv", id, have, invCost]] };
   const need = qty - have;
   const it = ITEMS[id];
@@ -331,8 +331,15 @@ function plan(future = null, usage = null, cookWant = null) {
     // what a unit is worth if kept and sold instead (the cost of using it)
     // Caught fish in "Fishing + Cooking" (with "cook what I catch" on) count at their vendor price, so the
     // route cooks them; the totals still subtract what selling them raw would have paid.
-    value: id => { const l = (lots.get(id) || []).find(x => x.n > 0); return !l ? 0 : l.fish && state.cookCatch ? l.vend : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; },
+    value: id => { const l = (lots.get(id) || []).find(x => x.n > 0); return !l ? 0 : lotUnit(l); },
+    // total value of the next n units, in the order takeInv uses them (owned lots first, then step output)
+    valueOf: (id, n) => {
+      let sum = 0;
+      for (const l of lots.get(id) || []) { if (n <= 0) break; const k = Math.min(n, l.n); if (k > 0) { sum += k * lotUnit(l); n -= k; } }
+      return sum;
+    },
   };
+  function lotUnit(l) { return l.owned ? 0 : l.fish && state.cookCatch ? l.vend : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; }
   function takeInv(id, n, user) {
     for (const l of lots.get(id) || []) {
       if (n <= 0) break;
@@ -404,7 +411,8 @@ function plan(future = null, usage = null, cookWant = null) {
     for (let k = 0; k < n; k++) {
       const ctx2 = { book, makers, skill: s, inv, hasTool };
       for (const [id, q] of r.reagents) {
-        demand.set(id, (demand.get(id) || 0) + q);
+        const fromInv = Math.min(q, inv.qty(id)); // what the inventory covers isn't demand for the next pass
+        if (q > fromInv) demand.set(id, (demand.get(id) || 0) + q - fromInv);
         const a = acquire(ctx2, id, q);
         if (a) spent += applyPlan(a, s, st);
       }
@@ -1045,7 +1053,11 @@ function applyHash() {
   put("ffrom", num("ff", 1, 299)); put("fto", num("ft", 2, 300));
   const pole = num("pole", 0, 35); put("pole", POLES.includes(pole) ? pole : null);
   put("castSec", num("cast", 5, 40)); put("hourValue", num("hv", 0, 1e6, false)); put("cookCatch", bool("cook"));
-  state.excluded = new Set((q.get("ex") || "").split(".").map(Number).filter(n => n > 0)); // the link's exclusions, or none
+  if (state.from >= state.to) { if (has("to") && !has("from")) state.from = Math.max(1, state.to - 1); else state.to = Math.min(300, state.from + 1); store.set("lv:from", state.from); store.set("lv:to", state.to); }
+  const known = new Set(); // only exclusions that name a recipe of this profession (or the Mining helper)
+  for (const r of profData()?.recipes || []) known.add(r.id);
+  for (const r of REC.professions.find(p => p.name === "Mining")?.recipes || []) known.add(r.id);
+  state.excluded = new Set((q.get("ex") || "").split(".").map(Number).filter(n => n > 0 && known.has(n))); // the link's exclusions, or none
   store.set("lv:excluded", [...state.excluded]);
   // the link's materials are shown but not saved over your own list until you edit the box
   if (has("own")) state.owned = q.get("own").split(".").map(x => x.split("x").map(Number))
