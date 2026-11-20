@@ -132,10 +132,20 @@
   <section class="panel" aria-label="Shopping list" id="shopPanel">
     <div class="panel-head">
       <div><h2>Shopping list</h2><p>Everything the route buys, biggest first.</p></div>
+      <div class="export-btns">
+        <button type="button" class="chip" id="copyAuc" title="Paste in Auctionator: Shopping tab → Import">Copy for Auctionator</button>
+        <button type="button" class="chip" id="copyTxt">Copy as text</button>
+        <span class="copy-msg" id="copyMsg" role="status" aria-live="polite"></span>
+      </div>
     </div>
     <div class="table-scroll">
       <table class="shop"><thead><tr><th>Item</th><th class="num">From AH</th><th class="num">From vendor</th><th class="num">Supply</th></tr></thead><tbody id="shop"></tbody></table>
     </div>
+    <details class="more export">
+      <summary>Auctionator import string <small>AH items only, for copying by hand</small></summary>
+      <p class="hint">In game: Auction House → Auctionator's Shopping tab → Import, paste, Import. Vendor items aren't included; "Copy as text" lists them too.</p>
+      <textarea id="aucStr" readonly rows="3" spellcheck="false" aria-label="Auctionator shopping list import string"></textarea>
+    </details>
   </section>
 
   <section class="panel" aria-label="Selling">
@@ -157,6 +167,7 @@
     <p>Patterns: "Trainer + patterns on AH / vendor / quest" uses patterns you can actually get (vendor prices and NPCs are Classic data; quest patterns such as the Imperial Plate plans count as free). "All patterns" assumes you have every pattern, including drops and new Forever patterns whose source we don't know yet.</p>
     <p>The route stops at each rank cap (75, 150, 225) and shows where to train the next rank. Journeyman needs character level 10, Expert level 20, Artisan level 35, so a lower "Character level" ends the route at the last rank you can train.</p>
     <p>Reagents come from vendors when cheaper, otherwise from the cheapest auction listings still left, or are crafted yourself (bolts, bars, leather…) when that is cheaper. Click ✕ on a step to drop a recipe you don't want; the route is re-planned without it.</p>
+    <p>"Copy for Auctionator" copies the shopping list's AH items as an Auctionator shopping list (exact item names with the quantity to buy) named after the profession and skill range: in game open Auctionator's Shopping tab, click Import and paste it. "Copy as text" gives plain lines such as "20x Linen Cloth", vendor items included.</p>
     <p>Trainer fees are included: each trainer recipe's cost is paid once, on the step that first uses it ("incl. training"), and each rank's fee (Journeyman 5s, Expert 50s, Artisan 5g) on its training row. Forever's trainer prices and learn skills come from Wowhead's Forever data. Cooking and First Aid's higher ranks come from books or quests, not a trainer fee.</p>
     <p>The route switches recipes only when the other one is clearly cheaper (15%, and at least a minimum per skill point that grows with level) and stays usable for at least 5 more points, so it doesn't jump between items to save a few copper.</p>
     <h3>Fishing</h3>

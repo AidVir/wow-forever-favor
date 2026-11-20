@@ -692,6 +692,49 @@ function renderFish(p) {
   }).join("") + f.ranks.filter(k => !done.has(k.name)).map(rankRow).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
 }
 
+// Shopping-list export. Auctionator's import box (Shopping tab → Import) takes one list per line:
+// `List name^term^term…`, where each term is an advanced search string of 14 ";"-separated fields:
+// query;category;minItemLevel;maxItemLevel;minLevel;maxLevel;minCraftedLevel;maxCraftedLevel;
+// minPrice;maxPrice;quality;tier;expansion;quantity. A query wrapped in "" is an exact-name search,
+// tier "#" means none, empty fields mean any. Source (Auctionator v284, Classic build):
+// Source/Shopping/ImportExport.lua (GetBatchExportString / BatchImportFromString split on "\n" and "^"),
+// Source/Search/Advanced.lua (SplitAdvancedSearch / ReconstituteAdvancedSearch), Constants/Main.lua
+// (AdvancedSearchDivider = ";"), mirrored at
+// https://github.com/zhaochengw/WOW-AddOns-Classic/tree/HEAD/Auctionator/Source (upstream Auctionator repo is no longer on GitHub).
+let EXPORT = { auc: "", txt: "" };
+const aucTerm = (name, qty) => [`"${name}"`, "", "", "", "", "", "", "", "", "", "", "#", "", qty].join(";");
+function shopExport(shop, listName) {
+  const name = id => ITEMS[id]?.n;
+  // "^", ";" and line breaks are the format's separators, so keep them out of names.
+  const clean = s => String(s).replace(/[\^;\r\n"]/g, " ").trim();
+  const ah = shop.filter(e => e.ah > 0 && name(e.id));
+  const auc = ah.length ? [clean(listName), ...ah.map(e => aucTerm(clean(name(e.id)), e.ah))].join("^") : "";
+  const lines = [
+    ...ah.map(e => `${e.ah}x ${name(e.id)}`),
+    ...shop.filter(e => e.vendor > 0).map(e => `${e.vendor}x ${name(e.id) || "item " + e.id} (vendor)`),
+  ];
+  return { auc, txt: lines.length ? `${listName}\n${lines.join("\n")}` : "" };
+}
+
+let copyTimer = 0;
+async function copyText(text) {
+  if (!text) return;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { /* insecure context or denied: fall back */ }
+  if (!ok) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+  }
+  const msg = $("#copyMsg");
+  msg.textContent = ok ? "Copied" : "Couldn't copy: press Ctrl+C on the selected text below";
+  // Last resort: show the text (whichever button was pressed) in the box, selected, for a manual copy.
+  if (!ok) { $("details.export").open = true; const box = $("#aucStr"); box.value = text; box.focus(); box.select(); }
+  clearTimeout(copyTimer); copyTimer = setTimeout(() => { msg.textContent = ""; }, 2000);
+}
+
 function render() {
   if (!PRICES || !REC) return;
   const prof = profData();
@@ -818,6 +861,10 @@ function render() {
   $("#shop").innerHTML = shop.map(e => `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}${split ? `<small>${e.pre === e.ah + e.vendor ? "all before skill 225" : e.pre ? `${e.pre.toLocaleString("en-GB")} before skill 225` : "only after 225"}</small>` : ""}</td>
       <td class="num">${e.ah ? e.ah.toLocaleString("en-GB") : ""}</td><td class="num">${e.vendor ? e.vendor.toLocaleString("en-GB") : ""}</td>
       <td class="num">${e.ah ? `${listed(makeBook(PRICES, state.faction, state.neutral), e.id).toLocaleString("en-GB")} listed` : `vendor ${gold(ITEMS[e.id]?.v)}`}</td></tr>`).join("");
+  const last = p.steps.length ? Math.min(p.steps[p.steps.length - 1].to, state.to) : state.from;
+  EXPORT = shopExport(shop, `WFF ${prof.name} ${state.from}-${last}`);
+  $("#aucStr").value = EXPORT.auc;
+  $("#copyAuc").disabled = !EXPORT.auc; $("#copyTxt").disabled = !EXPORT.txt;
   $("#excl").innerHTML = state.excluded.size ? `Excluded: ${[...state.excluded].map(id => { const r = prof.recipes.find(x => x.id === id); return r ? `<button class="chip" data-unex="${id}">${esc(r.name)} ✕</button>` : ""; }).join(" ")}` : "";
   $("#perf").textContent = `Planned in ${Math.round(performance.now() - t0)} ms`;
 }
@@ -856,6 +903,8 @@ function bind() {
     if (tr && !e.target.closest("a, button")) toggle(tr);
   };
   $("#steps").onkeydown = e => { const tr = e.target.closest("tr.row"); if (tr && e.target === tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); } };
+  $("#copyAuc").onclick = () => copyText(EXPORT.auc);
+  $("#copyTxt").onclick = () => copyText(EXPORT.txt);
   $("#excl").onclick = e => { const id = Number(e.target.dataset?.unex); if (id) { state.excluded.delete(id); store.set("lv:excluded", [...state.excluded]); render(); } };
 }
 

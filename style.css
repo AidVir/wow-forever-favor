@@ -264,6 +264,18 @@ details.explain h3 { font-size: 13px; text-transform: uppercase; letter-spacing:
 }
 .chip:hover { color: var(--text); border-color: var(--line-strong); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.chip:disabled { opacity: .5; cursor: default; }
+
+/* shopping-list export (leveling page) */
+.export-btns { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.copy-msg { font-size: var(--fs-xs); font-weight: 600; color: var(--good); }
+details.export { margin-top: var(--sp-4); }
+details.export textarea {
+  display: block; width: 100%; margin-top: var(--sp-3); resize: vertical; min-height: 64px;
+  font: var(--fs-xs)/1.5 ui-monospace, Consolas, monospace; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
+}
+details.export textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- tables ---------- */
 .table-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--sp-5)); padding: 0 var(--sp-5); }

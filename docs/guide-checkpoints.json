@@ -1,0 +1,12 @@
+{
+  "note": "Hand checkpoints from docs/LEVELING-REVIEW.md finding 1: recipes the guides use over a skill range in WoW Forever, as [profession, from, to, recipe name]. scripts/check-guides.mjs checks these together with every step in docs/guide-routes.json.",
+  "checkpoints": [
+    ["Tailoring", 55, 80, "Bolt of Woolen Cloth"],
+    ["Tailoring", 100, 120, "Bolt of Silk Cloth"],
+    ["Tailoring", 140, 150, "Bolt of Mageweave"],
+    ["Tailoring", 120, 140, "Gloves of Meditation"],
+    ["Tailoring", 150, 170, "Crimson Silk Vest"],
+    ["Blacksmithing", 50, 67, "Coarse Grinding Stone"],
+    ["Blacksmithing", 100, 112, "Heavy Grinding Stone"]
+  ]
+}

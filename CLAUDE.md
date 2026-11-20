@@ -37,6 +37,7 @@ data/sales.json            written by the price bot. Do not edit by hand
 scripts/fetch-prices.mjs   price + sales job (runs in GitHub Actions)
 scripts/build-recipes.mjs  regenerates recipes.json after a game patch
 scripts/build-fishing.mjs  regenerates fishing.json (no Blizzard credentials needed)
+scripts/check-guides.mjs   warns where recipes.json disagrees with the guides (docs/guide-routes.json, guide-checkpoints.json)
 scripts/serve.mjs          local preview server; serve.cmd is a double-click launcher
 .github/workflows/update-prices.yml
 ```
@@ -175,6 +176,9 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   divided by its skill-up chance. Otherwise low-chance crafts win.
 - **Sign convention in the UI:** profit is `+` (green, `.pos`) and loss is `−` (red, `.neg`), via
   `pl()`. Plain costs stay unsigned.
+- **Shopping-list export:** `shopExport()` builds an Auctionator import string (`WFF <Profession> <from>-<to>^"Item";;;;;;;;;;;#;;qty^…`,
+  AH items only, exact names + quantity; format from Auctionator's `ImportExport.lua` / `Search/Advanced.lua`) and
+  a plain "20x Item" text (vendor items marked); "Copy for Auctionator" / "Copy as text" and a textarea in `details.export`.
 
 ## Working on it
 
