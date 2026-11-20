@@ -53,7 +53,7 @@
       </div>
     </div>
     <details class="more" open>
-      <summary>More options <small>level · recipes · selling time · smelting · stations</small></summary>
+      <summary>More options <small>level · recipes · selling time · smelting · stations · materials I have</small></summary>
       <div class="controls">
         <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60" aria-describedby="time-help"></div>
         <div class="ctl">
@@ -102,8 +102,20 @@
         <div class="ctl"><label for="hourval">My time is worth (gold / hour)</label><input id="hourval" type="number" min="0" step="1" value="10"></div>
         <div class="ctl fish-both"><span class="lbl">Fish I catch</span><label class="chk"><input id="cookcatch" type="checkbox" checked> Cook them first, even when selling raw would pay more</label></div>
       </div>
+      <div class="controls owned-ctl">
+        <div class="ctl owned">
+          <label for="owned">Materials I already have</label>
+          <textarea id="owned" rows="4" spellcheck="false" autocomplete="off" placeholder="20x Linen Cloth&#10;Copper Bar x40&#10;Light Leather 15" aria-describedby="owned-help ownedHint"></textarea>
+          <p class="hint" id="owned-help">One item per line with a count: 20x Linen Cloth, Linen Cloth x20, Linen Cloth 20 or 20 Linen Cloth. The route uses these first and counts them as free.</p>
+          <p class="hint" id="ownedHint" aria-live="polite"></p>
+        </div>
+      </div>
       <p class="hint" id="time-help">Character level decides how far you can train: Journeyman (past 75) needs level 10, Expert (past 150) level 20, Artisan (past 225) level 35. Time value adds a cost to every craft, so the route prefers fewer crafts. Time to sell is how long you'll keep relisting crafts on the AH.</p>
     </details>
+    <div class="share-row">
+      <button type="button" class="chip" id="shareLink">Copy link to this plan</button>
+      <span class="share-msg" id="shareMsg" aria-live="polite"></span>
+    </div>
   </section>
 
   <section class="panel" aria-label="Fishing route" id="fishPanel" hidden>
@@ -168,6 +180,8 @@
     <p>The route stops at each rank cap (75, 150, 225) and shows where to train the next rank. Journeyman needs character level 10, Expert level 20, Artisan level 35, so a lower "Character level" ends the route at the last rank you can train.</p>
     <p>Reagents come from vendors when cheaper, otherwise from the cheapest auction listings still left, or are crafted yourself (bolts, bars, leather…) when that is cheaper. Click ✕ on a step to drop a recipe you don't want; the route is re-planned without it.</p>
     <p>"Copy for Auctionator" copies the shopping list's AH items as an Auctionator shopping list (exact item names with the quantity to buy) named after the profession and skill range: in game open Auctionator's Shopping tab, click Import and paste it. "Copy as text" gives plain lines such as "20x Linen Cloth", vendor items included.</p>
+    <p>Materials you already have (under More options) are used before anything is bought and count as free, since you own them already: steps say "uses N from your bags", the shopping list shows "have N" and buys only the rest. Names are matched to the game's item names, ignoring case; lines that match no item are listed under the box.</p>
+    <p>"Copy link to this plan" copies a link with your settings in it (profession, skills, selling mode, recipes, faction, character level, time value, excluded recipes, fishing settings and, when the list is short, your materials). Opening the link shows the same plan, priced with that moment's auction house; the page also keeps its address up to date as you change settings. Crafting stations aren't in the link.</p>
     <p>Trainer fees are included: each trainer recipe's cost is paid once, on the step that first uses it ("incl. training"), and each rank's fee (Journeyman 5s, Expert 50s, Artisan 5g) on its training row. Forever's trainer prices and learn skills come from Wowhead's Forever data. Cooking and First Aid's higher ranks come from books or quests, not a trainer fee.</p>
     <p>The route switches recipes only when the other one is clearly cheaper (15%, and at least a minimum per skill point that grows with level) and stays usable for at least 5 more points, so it doesn't jump between items to save a few copper.</p>
     <h3>Fishing</h3>
