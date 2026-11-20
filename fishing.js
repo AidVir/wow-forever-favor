@@ -50,6 +50,18 @@ export function openSpots(F, faction, level = 60) {
   // lowest level first, so among spots with the same catch the easiest one is named
   return F.spots.filter(s => (!s.faction || s.faction === faction) && s.levels[0] <= level).sort((a, b) => a.levels[0] - b.levels[0]);
 }
+// Fishing pole <select>: options with data-lvl above the character level are disabled. Returns the pole bonus to
+// use: the chosen one, or the best one this character can equip that is no better than it.
+export function fitPole(select, level, pole) {
+  let best = 0;
+  for (const o of select.options) {
+    o.disabled = Number(o.dataset.lvl || 0) > level;
+    const b = Number(o.value);
+    if (!o.disabled && b <= pole && b > best) best = b;
+  }
+  if (String(best) !== select.value) select.value = String(best);
+  return best;
+}
 export const fishName = (F, ITEMS, id) => ITEMS?.[id]?.n || F.items[id]?.n || String(id);
 // Other spots that catch the same fish at the same skill. `seasonal` says whether the seasonal fish
 // (Winter Squid / Summer Bass) differs: true = same; otherwise "with" or "without" it.

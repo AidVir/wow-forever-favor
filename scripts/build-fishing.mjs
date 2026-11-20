@@ -51,8 +51,12 @@ const LURES = [
 ];
 // Lures sold by fishing-supply vendors (the others only come from the AH).
 const VENDOR_LURES = new Set([6529, 6530, 6532]);
+// lvl / skill = character level and Fishing skill needed to equip (client ItemSparse). 285094 Ravaged Fishing Pole
+// is Forever-only (drops from Lord Angler, Dustwallow Marsh), so it isn't in Classic item data; its name is added below.
 const POLES = [
-  { id: 6256, bonus: 0 }, { id: 12225, bonus: 3 }, { id: 6365, bonus: 5 }, { id: 6367, bonus: 20 }, { id: 19022, bonus: 25 }, { id: 19970, bonus: 35 },
+  { id: 6256, bonus: 0 }, { id: 12225, bonus: 3, skill: 1 }, { id: 6365, bonus: 5, lvl: 5, skill: 10 },
+  { id: 285094, bonus: 15, lvl: 20, skill: 50, from: "Lord Angler (Dustwallow Marsh)" },
+  { id: 6367, bonus: 20, lvl: 25, skill: 100 }, { id: 19022, bonus: 25, skill: 100 }, { id: 19970, bonus: 35, skill: 300 },
 ];
 const RANKS = [
   { name: "Journeyman", cap: 150, skill: 50, level: 10, how: "any fishing trainer" },
@@ -174,6 +178,7 @@ async function main() {
     itemInfo[id] = { n: i.name, q: (i.quality || "")[0], s: i.sellPrice || 0, ...(i.vendorPrice && (VENDOR_LURES.has(id) || POLES.some(p => p.id === id && [6256, 6365].includes(id))) ? { v: i.vendorPrice } : {}) };
   }
   itemInfo[16083] = { ...itemInfo[16083], v: items.get(16083)?.vendorPrice ?? 10000 };
+  itemInfo[285094] ||= { n: "Ravaged Fishing Pole", q: "", s: 0 }; // Forever-only, not in Classic item data
   const data = {
     note: "Built by scripts/build-fishing.mjs from Classic 1.12 server data (cmangos classic-db), the Forever client's zone names and Classic item data. fish = expected units per successful cast. A cast succeeds with chance (skill + bonus − base + 5)% and needs skill + bonus >= base; full = base + 95 (no fish get away). seasonal = extra Winter Squid (Oct–Mar) / Raw Summer Bass (Apr–Sep) per cast.",
     build: BUILD,

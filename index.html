@@ -51,6 +51,13 @@
           <option value="none">Ignoring what crafts sell for</option>
         </select>
       </div>
+      <div class="ctl">
+        <label for="mode">Route</label>
+        <select id="mode">
+          <option value="afk">Fewer, longer steps (craft AFK)</option>
+          <option value="profit">Most profit (switch often)</option>
+        </select>
+      </div>
     </div>
     <details class="more" open>
       <summary>More options <small>level · recipes · selling time · smelting · stations · materials I have</small></summary>
@@ -75,10 +82,6 @@
         </div>
         <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="5" aria-describedby="time-help"></div>
         <div class="ctl">
-          <span class="lbl">Route</span>
-          <label class="chk"><input id="fast" type="checkbox" checked> Avoid recipes needing over 3 crafts per point</label>
-        </div>
-        <div class="ctl">
           <span class="lbl">Materials</span>
           <label class="chk"><input id="mining" type="checkbox"> I can smelt bars (Mining)</label>
           <label class="chk"><input id="neutral" type="checkbox"> Also buy from Blackwater AH</label>
@@ -92,8 +95,9 @@
           <label for="pole">Fishing pole</label>
           <select id="pole">
             <option value="0">Fishing Pole (+0)</option>
-            <option value="5">Strong Fishing Pole (+5)</option>
-            <option value="20">Big Iron Fishing Pole (+20)</option>
+            <option value="5" data-lvl="5">Strong Fishing Pole (+5)</option>
+            <option value="15" data-lvl="20">Ravaged Fishing Pole (+15, level 20)</option>
+            <option value="20" data-lvl="25">Big Iron Fishing Pole (+20, level 25)</option>
             <option value="25">Nat Pagle's Extreme Angler FC-5000 (+25)</option>
             <option value="35">Arcanite Fishing Pole (+35)</option>
           </select>
@@ -174,16 +178,15 @@
     <summary>How the route is chosen</summary>
     <p>Each skill point uses the recipe with the lowest expected cost per point right now. Orange always gives a point; yellow and green give one with chance (grey − skill) ÷ (grey − yellow). Each step's details show its thresholds as <span class="o">yellow</span> <span class="y">green</span> <span class="gr">grey</span>.</p>
     <p>Open a step to see its alternative: the next-cheapest recipe at that point, how much more (or less) it would cost over the same skill points, and a "Use it instead" button that drops the current recipe and re-plans.</p>
-    <p>Three rules keep the route practical, like a written guide. It stays on the current recipe unless another one is more than 10% cheaper, so it doesn't switch back and forth for a few copper. With "Avoid recipes needing over 3 crafts per point" ticked, it skips slow green recipes whenever a faster one exists. And every craft costs the time value you set (5 silver by default), so it prefers fewer crafts.</p>
+    <p>"Route" picks one of two modes. <b>Fewer, longer steps</b> (the default) is for queueing big batches and crafting AFK: it skips slow recipes (over 3 crafts per point) whenever a faster one costs at most twice as much, and picks each new recipe by its average cost over the whole run it can cover before it gets slow, plus a penalty for each extra step, so recipes that stay orange and yellow for many points win. It stays on that recipe until it gets slow unless another one is much cheaper (by about half of what a point costs there) for at least 15 points, merges steps of under 5 points into a neighbour when that costs little, and counts AH sales 10% lower since they're an estimate. That usually gives 9–15 steps for 1–300 instead of 20–30, and the summary shows how much more it costs than the other mode. <b>Most profit</b> switches to whatever recipe is cheapest at every point, even for a few crafts and slow ones. Either way every craft costs the time value you set (5 silver by default), so the route prefers fewer crafts.</p>
     <p>What you make is kept for later steps when a later recipe needs it (blasting powder for bombs, bolts for tailoring, grinding stones for weapons), like the written guides do: those steps say "keep N for later" and "uses N from earlier steps", and the route plans twice so it knows which reagents are worth making early for skill points. Tools are bought or crafted once, the first time a step needs them: Blacksmith Hammer from a vendor, Arclight Spanner and Gyromatic Micro-Adjustor crafted, and the runed rods every enchant needs.</p>
     <p>Patterns: "Trainer + patterns on AH / vendor / quest" uses patterns you can actually get (vendor prices and NPCs are Classic data; quest patterns such as the Imperial Plate plans count as free). "All patterns" assumes you have every pattern, including drops and new Forever patterns whose source we don't know yet.</p>
     <p>The route stops at each rank cap (75, 150, 225) and shows where to train the next rank. Journeyman needs character level 10, Expert level 20, Artisan level 35, so a lower "Character level" ends the route at the last rank you can train.</p>
     <p>Reagents come from vendors when cheaper, otherwise from the cheapest auction listings still left, or are crafted yourself (bolts, bars, leather…) when that is cheaper. Click ✕ on a step to drop a recipe you don't want; the route is re-planned without it.</p>
     <p>"Copy for Auctionator" copies the shopping list's AH items as an Auctionator shopping list (exact item names with the quantity to buy) named after the profession and skill range: in game open Auctionator's Shopping tab, click Import and paste it. "Copy as text" gives plain lines such as "20x Linen Cloth", vendor items included.</p>
     <p>Materials you already have (under More options) are used before anything is bought and count as free, since you own them already: steps say "uses N from your bags", the shopping list shows "have N" and buys only the rest. Names are matched to the game's item names, ignoring case; lines that match no item are listed under the box.</p>
-    <p>"Copy link to this plan" copies a link with your settings in it (profession, skills, selling mode, recipes, faction, character level, time value, excluded recipes, fishing settings and, when the list is short, your materials). Opening the link shows the same plan, priced with that moment's auction house; the page also keeps its address up to date as you change settings. Crafting stations aren't in the link.</p>
+    <p>"Copy link to this plan" copies a link with your settings in it (profession, skills, selling mode, route mode, recipes, faction, character level, time value, excluded recipes, fishing settings and, when the list is short, your materials). Opening the link shows the same plan, priced with that moment's auction house; the page also keeps its address up to date as you change settings. Crafting stations aren't in the link.</p>
     <p>Trainer fees are included: each trainer recipe's cost is paid once, on the step that first uses it ("incl. training"), and each rank's fee (Journeyman 5s, Expert 50s, Artisan 5g) on its training row. Forever's trainer prices and learn skills come from Wowhead's Forever data. Cooking and First Aid's higher ranks come from books or quests, not a trainer fee.</p>
-    <p>The route switches recipes only when the other one is clearly cheaper (15%, and at least a minimum per skill point that grows with level) and stays usable for at least 5 more points, so it doesn't jump between items to save a few copper.</p>
     <h3>Fishing</h3>
     <p>Pick <i>Fishing</i> or <i>Fishing + Cooking</i> as the profession. A cast catches something with chance (your skill − the spot's base skill + 5)%, where your skill includes the pole and lure; below the base skill nothing bites, and from base + 95 nothing gets away (25 in the starting zones, 75 in the capitals and level 10–20 zones, 150, 225, 300 and 425 further out). Fishing skill goes up on successful catches only, and where you fish doesn't change the rate: 1 catch per point up to 100, then one more catch per point every 25 skill (10 per point at 290–300), about 1,280 catches for 1–300.</p>
     <p>Each skill point picks the spot and lure with the lowest cost: hours spent × what your time is worth, plus lures, minus what the catch sells for (on the AH up to your share of measured demand, the rest at the vendor). It only moves to another spot when that is clearly better, since travel isn't free, and only to zones your character level is suited for. Ranks: Journeyman at skill 50 from any fishing trainer (level 10), Expert with the book "Expert Fishing - The Bass and You" from Old Man Heming in Booty Bay (skill 125, level 20), Artisan from Nat Pagle's quest in Dustwallow Marsh (skill 225, level 35).</p>

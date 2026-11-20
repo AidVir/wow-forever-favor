@@ -1,5 +1,5 @@
 import { $, store, esc, gold, makeBook, listed, minPrice, loadPrices, loadJson, ago, bindFaction, wh, acquire, salesStats, marketTrend, projectPrice } from "./common.js";
-import { FISH_SECONDS, catchChance, spotYield, lureOptions, openSpots, sameCatch, sameCatchText } from "./fishing.js";
+import { FISH_SECONDS, catchChance, spotYield, lureOptions, openSpots, sameCatch, sameCatchText, fitPole } from "./fishing.js";
 
 // --- rules (explained on the page under "How this is calculated") -------------------------
 const AH_CUT = 0.95;          // the AH keeps 5% of the sale price
@@ -365,6 +365,9 @@ function render() {
   if (!PRICES || !REC) return;
   const t0 = performance.now();
   $("#market").textContent = `${PRICES.region} · ${PRICES.ruleset.name} · ${PRICES.factions[state.faction].house.name}`;
+  // a pole the character level can't equip falls back to the best one it can
+  const pole = fitPole($("#pole"), state.level, state.pole);
+  if (pole !== state.pole) { state.pole = pole; store.set("mm:pole", pole); }
   const res = compute();
   const { rows, hidden, sales } = res;
   paintStatus();

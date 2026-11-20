@@ -55,17 +55,19 @@ const wago = async (table, build) => {
 };
 
 export async function loadTables(build, wci = null) {
-  const [sla, totems, cats, sparse] = await Promise.all(["SkillLineAbility", "SpellTotems", "TotemCategory", "ItemSparse"].map(t => wago(t, build)));
+  const [sla, totems, cats, sparse, skills] = await Promise.all(["SkillLineAbility", "SpellTotems", "TotemCategory", "ItemSparse", "SkillLine"].map(t => wago(t, build)));
   wci ||= await (await fetch("https://raw.githubusercontent.com/nexus-devs/wow-classic-items/master/data/json/data.json")).json();
-  return { sla, totems, cats, sparse, wci };
+  return { sla, totems, cats, sparse, skills, wci };
 }
 
-export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
+export function addExtras(rec, { sla, totems, cats, sparse, skills = [], wci }) {
   const spellOf = new Map(sla.map(r => [Number(r.ID), Number(r.Spell)]));
   const totemBySpell = new Map(totems.map(t => [Number(t.SpellID), t]));
   const sparseById = new Map(sparse.map(r => [Number(r.ID), r]));
   const wciById = new Map(wci.map(i => [i.itemId, i]));
   const catById = new Map(cats.map(c => [Number(c.ID), { name: c.Name_lang, type: Number(c.TotemCategoryType), mask: Number(c.TotemCategoryMask) >>> 0 }]));
+  // skill line id -> profession name (Forever has extra skill lines with the same name, e.g. 2938 "Blacksmithing")
+  const skillName = new Map(skills.map(k => [Number(k.ID), k.DisplayName_lang]));
 
   // Every item that is a tool, by category. A tool satisfies requirement R if same type and mask ⊇ R.mask.
   const toolItems = sparse.filter(r => Number(r.TotemCategoryID)).map(r => ({ id: Number(r.ID), cat: Number(r.TotemCategoryID) }));
@@ -77,6 +79,10 @@ export function addExtras(rec, { sla, totems, cats, sparse, wci }) {
   const addToolItem = id => {
     const s = sparseById.get(id); if (!s) return;
     tools.items[id] = { cat: Number(s.TotemCategoryID) || 0, bop: Number(s.Bonding) === 1 ? 1 : 0, vendor: VENDOR_TOOLS.has(id) ? 1 : 0 };
+    // to use the tool: character level and profession skill (sk = profession name, skill = rank)
+    const lvl = Number(s.RequiredLevel) || 0, sk = Number(s.RequiredSkill) || 0, rank = Number(s.RequiredSkillRank) || 0;
+    if (lvl > 1) tools.items[id].lvl = lvl;
+    if (sk && rank > 0) { tools.items[id].skill = rank; tools.items[id].sk = skillName.get(sk) || String(sk); }
     rec.items[id] ||= { n: s.Display_lang, q: "C", s: Number(s.SellPrice) || 0 };
     if (VENDOR_TOOLS.has(id)) rec.items[id].v = Number(s.BuyPrice) || rec.items[id].v;
   };

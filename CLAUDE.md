@@ -129,21 +129,41 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   recipe got in the first pass (`usage`; 5 before that). Rank fees (`recipes.json` `ranks[prof]`, e.g.
   Journeyman 5s, Expert 50s, Artisan 5g; Cooking / First Aid higher ranks are books, no fee) are paid
   when the route reaches 75 / 150 / 225 and shown on the training rows. A time cost per craft is added (default 5s).
-- **Route shape rules** (constants near the top of `leveling.js`):
-  - `STICK` (15%) / `stickMin(skill)` (20c + 1c per skill point, per point): switch only when the other
-    recipe saves more than that per point, and (`MIN_RUN` 5) a short detour must save at least five
-    points of that minimum in total. Costs 0–4% vs free switching, for fewer and longer steps.
-  - `MAX_CRAFTS_PER_POINT` (3): with "Avoid recipes needing over 3 crafts per point" on, slower
-    recipes are skipped while a faster one exists.
+- **Route modes** ("Route" select `#mode`, `state.mode`, saved as `lv:mode`, link key `m`; `plan(…, {mode, merge})`;
+  constants near the top of `leveling.js`):
+  - `profit` ("Most profit"): the cheapest `per` at every point, switching freely, slow recipes allowed.
+  - `afk` ("Fewer, longer steps", default, for crafting big batches AFK):
+    - slow recipes (> `MAX_CRAFTS_PER_POINT` 3 crafts per point) are skipped while a fast one costs at most
+      `AFK_SLOW` (2×) as much;
+    - candidates are scored by `avg` = cost per point over the run they can still cover (`reach()`: until
+      slow, at most `AFK_HORIZON` 40 points), buying the run's reagents from the order book at once (run
+      shortened when the AH runs out) and counting AH credit `AFK_RISK` (10%) lower, plus a switch penalty
+      `AFK_SWITCH` (10) × `scale` (cheapest gross cost per point there, at least `stickMin(skill)`) ÷ run length;
+    - the current recipe stays until it gets slow, unless another saves > `AFK_STICK` (45%) × `scale` per
+      point, lasts `AFK_MIN_RUN` (15) points (or as long as the current one) and saves more than the penalty;
+    - steps under `AFK_MERGE` (5) points: pass 1 returns `merge` (skill point → neighbour recipe id) when the
+      step before/after can cover them for less than the penalty; pass 2 crafts that recipe there.
+  - Measured 1–300 on EU PvP data (AH mode, steps incl. rank splits): afk 9–16 steps vs profit 11–32; afk
+    costs 5–12% more in "ignore sales" mode. `render()` also plans `profit` (2 more passes, skipped when the
+    shown passes took over 300 ms) and shows the difference under "Steps" in the summary.
 - **Training ranks:** `RANKS` (75/150/225 caps, skill 50/125/200, level 10/20/35). Steps break at each
   cap, a "Train X" row is shown with `TRAINERS` (Forever Expert/Artisan trainers per faction), and
   "Character level" ends the route at the last rank that level can train. The shopping list says how
   much is needed before 225 (Artisan needs level 35).
 - **Tools:** `recipe.tools` = required tool categories (from the client's `SpellTotems`); top-level
-  `recipes.json` `tools.categories[c] = {n, ok:[itemIds that satisfy it]}`, `tools.items[id] = {cat, bop, vendor}`.
+  `recipes.json` `tools.categories[c] = {n, ok:[itemIds that satisfy it]}`, `tools.items[id] = {cat, bop, vendor, lvl?, skill?, sk?}`
+  (`lvl` = required character level, `sk` + `skill` = required profession and rank, from the client's ItemSparse /
+  SkillLine, e.g. Mithril Blacksmith Hammer: level 34, Blacksmithing 195).
   The route gets each tool once, the first time a step needs it (`toolsNeeded` / `toolGet`): vendor
-  (`VENDOR_TOOLS` in `scripts/client-extras.mjs`), AH (not for BoP rods) or crafted with this profession.
+  (`VENDOR_TOOLS` in `scripts/client-extras.mjs`), AH (not for BoP rods) or crafted with this profession
+  (`acquire` only crafts recipes learnable at that step's skill). `toolUsable()` skips tools above the
+  "Character level" or needing another profession / more skill than the step has.
   Its cost is amortised like a pattern; the step shows "first: buy/craft X".
+- **Stations:** "Crafting stations I can use" (`stationsFor()`) lists only stations (`recipe.needs`) of recipes the
+  route could use: this profession's recipes allowed by "Recipes I can use" that give skill-ups inside the range,
+  plus the recipes (this profession up to the end skill, Mining with "I can smelt bars") making their reagents or
+  tools, two levels deep. No stations: the control is hidden. `stationsOff` stays saved, but only blocks recipes
+  while that station is listed (`SHOWN_STATIONS`).
 - **Inventory:** step outputs go into lots (`lots`, `takeInv`); later steps use them before buying
   (`acquire` takes `ctx.inv`, valued at the sale credit you give up). Using an item undoes its sale
   credit, so totals stay cash-correct. Steps show "keep N for later" / "uses N from earlier steps".
@@ -151,7 +171,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   the first pass needed at 90% of what buying it costs (`replaceUnit`, up to the remaining demand), so
   intermediates get made early for skill points, as guides do with bolts / grinding stones / powder.
 - **Alternatives:** every usable recipe at a skill point is a candidate (`cands`); the step keeps the
-  runner-up at its first point (a fast one when "avoid slow recipes" is on) and adds up
+  runner-up at its first point (a fast one in `afk` mode) and adds up
   `(alt.run − best.run)` over the points where it still works (`run` = per-point cost without the
   one-time pattern/tool cost, shown separately). `altFact()` renders it; "Use it instead" excludes
   the step's recipe (same as ✕).
@@ -180,7 +200,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   `lots` as free lots (`owned: true`, no sale credit, so `takeInv` skips `unsell`); steps show "uses N from
   your bags", `renderOwned()` adds "have N" to the shopping list and lists unmatched lines under the box.
 - **Share link:** `planHash()` puts the settings in the URL hash (`#p=Tailoring&from=1&to=300&sell=ah&pat=…&f=…
-  &lvl=…&t=…&wait=…&fast=…&mine=…&bw=…`, fishing `ff ft pole cast hv cook` in fishing modes, `ex` excluded
+  &lvl=…&t=…&wait=…&m=afk|profit&mine=…&bw=…`, fishing `ff ft pole cast hv cook` in fishing modes, `ex` excluded
   recipe ids, `own=id x qty` joined by `.` when under 600 chars). `applyHash()` on load overrides and saves
   the settings (a link without `own` keeps the reader's own list; without `ex`, nothing is excluded);
   `syncHash()` in `render()` keeps the address current with `history.replaceState` once a plan hash exists or
@@ -256,6 +276,11 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - `ZONES` in the script holds level ranges and faction home zones (starting zones, the 10–20 zones and
     capitals). Instances are left out.
   - Zone names come from the Forever client's AreaTable, item names and vendor prices from wow-classic-items.
+  - `POLES` in the script (`poles` in fishing.json): `{id, bonus, lvl?, skill?}`, level / Fishing skill to equip from
+    ItemSparse. Forever-only Ravaged Fishing Pole (285094, +15, level 20, Fishing 50, drops from Lord Angler,
+    Dustwallow Marsh) is added by hand. The `#pole` selects on index.html and money.html list poles by bonus with
+    `data-lvl`; `fitPole()` (fishing.js) disables poles above the character level and falls back to the best
+    equipable one. The Fishing skill needed to equip a pole isn't checked.
 - **Rules:**
   - Catch chance is (skill + pole + lure − base + 5)%, and needs skill + pole + lure >= base (cmangos).
   - Catches per skill-up come from Warcraft Tavern's Classic table: 1 below 100, then +1 per 25 skill, 10 at
