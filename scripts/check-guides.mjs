@@ -11,6 +11,7 @@
 // --strict exits 1 when anything is flagged; --all also lists the checkpoints that pass.
 // build-recipes.mjs calls checkGuides() at the end (warnings only).
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
 const TOL = 5; // guides round to 5s; a recipe learnable a few points into the step is fine
 const read = async rel => JSON.parse(await readFile(new URL(rel, import.meta.url), "utf8"));
@@ -71,7 +72,7 @@ export async function checkGuides(recipesData, { all = false, log = console.log 
   return { checked: rows.length, warnings: bad };
 }
 
-if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/").replace(/^\//, "")}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const { warnings } = await checkGuides(null, { all: args.includes("--all") });
   if (args.includes("--strict") && warnings.length) process.exit(1);
