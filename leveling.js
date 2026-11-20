@@ -637,26 +637,18 @@ function altFact(st) {
     <small>${reag}</small><small>${cost}${extras ? " · " + extras : ""}</small>
     <button class="chip" data-ex="${st.r.id}" title="Excludes ${esc(st.r.name)} from the whole route and re-plans">Use it instead</button></div>`;
 }
-// How a step's recipe is learned, as a short tag in the row and a sentence in the details:
-// trainer (with the skill it is taught at and its fee), pattern (price or source, skill it can be used from),
-// or known from the start.
+// How a step's recipe is learned. The row only tags patterns (something you have to get); trainer and
+// starting recipes, and the skill a pattern is usable from, are in the details (learnText).
 function learnTag(st) {
-  const r = st.r, at = r.learn;
-  if (r.source === "auto") return ` <span class="tag learn" title="Every character knows this recipe">known from the start</span>`;
-  if (r.source === "trainer") {
-    const fee = st.patPaid ? ` · ${gold(st.patPaid)}` : r.train ? " · already learned" : " · fee not in our data";
-    return ` <span class="tag learn train" title="Taught by your profession trainer">trainer · learn at skill ${at}${fee}</span>`;
-  }
-  if (r.source === "item") {
-    const price = st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern";
-    return ` <span class="tag pat" title="${esc(patternText(r, st.pattern).replace(/<[^>]+>/g, ""))}">${price} · usable at skill ${at}</span>`;
-  }
-  return "";
+  const r = st.r;
+  if (r.source !== "item") return "";
+  const price = st.patPaid ? "pattern " + gold(st.patPaid) : st.pattern?.unknown ? "pattern: price unknown" : st.pattern?.how === "quest" ? "pattern: quest" : st.pattern?.cost ? "pattern: bought earlier" : "pattern";
+  return ` <span class="tag pat" title="${esc(patternText(r, st.pattern).replace(/<[^>]+>/g, ""))}">${price}</span>`;
 }
 function learnText(st) {
   const r = st.r, at = r.learn;
   if (r.source === "auto") return "Known from the start (every character has it)";
-  if (r.source === "trainer") return `From your ${esc(r.prof || state.prof)} trainer at skill ${at}${r.train ? `, costs ${gold(r.train)}` : ""}${st.patPaid ? " (paid on this step)" : r.train ? " (learned on an earlier step)" : ""}`;
+  if (r.source === "trainer") return `From your ${esc(r.prof || state.prof)} trainer at skill ${at}${r.train ? `, costs ${gold(r.train)}` : ", fee not in our data"}${st.patPaid ? " (paid on this step)" : r.train ? " (learned on an earlier step)" : ""}`;
   if (r.source === "item") return `${patternText(r, st.pattern)}; usable from skill ${at}`;
   return `Learn at skill ${at}`;
 }
@@ -689,11 +681,12 @@ function renderFish(p) {
     const sp = st.sp;
     const top = [...st.items.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${n.toLocaleString("en-GB")} ${wh(id, ITEMS[id]?.n || FISH.items[id]?.n || id)}`).join(", ");
     const away = Math.round((1 - st.p) * 100), awayEnd = Math.round((1 - (st.pEnd ?? st.p)) * 100);
-    const lure = st.o.lure ? `<span class="tag toolget">use ${wh(st.o.lure.id, ITEMS[st.o.lure.id]?.n || FISH.items[st.o.lure.id]?.n)} (+${st.o.bonus})</span> ` : "";
+    const lure = st.o.lure ? `<span class="act-tool">Use ${wh(st.o.lure.id, ITEMS[st.o.lure.id]?.n || FISH.items[st.o.lure.id]?.n)} (+${st.o.bonus})</span>` : "";
     const kept = Math.round(st.kept);
     const val = retVendor ? st.vendor : st.ah;
     return pre + `<tr><td class="num rng">${st.from}–${st.to}</td>
-      <td><b>${esc(sp.name)}</b> <span class="tag">level ${sp.levels[0]}–${sp.levels[1]}</span> ${lure}${kept ? `<span class="tag keep">keep ${kept} for cooking</span>` : ""}
+      <td><b>${esc(sp.name)}</b> <span class="muted">level ${sp.levels[0]}–${sp.levels[1]}</span>
+        ${lure || kept ? `<div class="meta step-act">${[lure, kept ? `<span class="act-keep">Keep ${kept} for cooking</span>` : ""].filter(Boolean).join(" · ")}</div>` : ""}
         <div class="meta">${away || awayEnd ? `${away === awayEnd ? away : `${away}→${awayEnd}`}% get away · ` : ""}none get away at ${sp.full}</div>
         <div class="meta">${top}</div>${(o => o.length ? `<div class="meta">Same catch: ${sameCatchText(FISH, ITEMS, o, esc)}</div>` : "")(sameCatch(open, sp))}</td>
       <td class="num">${Math.round(st.catches).toLocaleString("en-GB")}<small>${Math.round(st.casts).toLocaleString("en-GB")} casts</small></td>
@@ -825,15 +818,13 @@ function render() {
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${learnTag(st)}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
-        toolsGot.length || kept || used.length || fromBags ? `<div class="meta step-notes">${toolsGot.length ? `<span class="tag toolget">first: ${toolsGot.join(", ")}</span> ` : ""}${fromBags}${used.length ? `<span class="tag inv">uses ${used.join(", ")} from earlier steps</span> ` : ""}${kept ? `<span class="tag keep">keep ${kept} for later steps</span>` : ""}</div>` : ""}</td>
+        toolsGot.length || kept ? `<div class="meta step-act">${[toolsGot.length ? `<span class="act-tool">First: ${toolsGot.join(", ")}</span>` : "", kept ? `<span class="act-keep">Keep ${kept} for later steps</span>` : ""].filter(Boolean).join(" · ")}</div>` : ""}${used.length || fromBags ? `<div class="meta">${[fromBags ? "uses your bags" : "", used.length ? "uses earlier crafts" : ""].filter(Boolean).join(" · ")}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? (r.source === "trainer" ? "training " : "pattern ") + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${vend}${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
     </tr>`;
     if (open) {
       const tags = [
-
-        r.needs ? `<span class="tag">${esc(r.needs)}</span>` : "",
         r.isNew ? `<span class="tag new">new in Forever</span>` : "",
         r.est ? `<span class="tag">trainer skill est.</span>` : "",
       ].filter(Boolean).join(" ");
@@ -841,6 +832,7 @@ function render() {
         <div><span class="k">How to learn</span><span>${learnText(st)}</span></div>
         <div><span class="k">Skill-up colours</span><span>learn ${r.learn} · <span class="o">${r.yellow}</span> <span class="y">${r.green}</span> <span class="gr">${r.grey}</span></span></div>
         ${pattern ? `<div><span class="k">Pattern</span><span>${pattern}</span></div>` : ""}
+        ${used.length || fromBags ? `<div><span class="k">Uses what you have</span><span>${[fromBags.replace(/<[^>]+>/g, "").trim(), used.length ? `${used.join(", ")} from earlier steps` : ""].filter(Boolean).join("; ")}</span><small>not bought again</small></div>` : ""}
         ${toolsNeed.length ? `<div><span class="k">Tools</span><span>${toolsNeed.map(esc).join(", ")}</span><small>bought or made once, the first time a step needs them</small></div>` : ""}
         ${altFact(st)}
         <div><span class="k">Crafts per point</span><span>${(st.crafts / Math.max(1, st.to - st.from)).toFixed(1)}</span><small>${st.crafts} crafts for ${st.to - st.from} points</small></div>

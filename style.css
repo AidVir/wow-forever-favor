@@ -562,3 +562,21 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; 
 .share-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
 .share-msg { font-size: var(--fs-xs); color: var(--muted); }
 .tag.bags { color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+
+/* "More options" split into labelled groups (opt-group > h3.opt-h + .controls) */
+details.more > .opt-group { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px dashed var(--line); }
+details.more > .opt-group:first-of-type { border-top: 0; padding-top: 0; }
+.opt-h { margin: 0 0 var(--sp-3); font-family: inherit; font-size: var(--fs-xs); font-weight: 700; color: var(--text); letter-spacing: .02em; }
+.opt-group > .controls + .controls { margin-top: var(--sp-4); }
+.opt-group > .hint { margin-top: var(--sp-2); }
+.panel:not(.settings) > details.more:not(:last-child) { margin-bottom: var(--sp-4); }
+.panel:not(.settings) > .controls + details.more { margin-top: var(--sp-4); }
+.panel > .controls + .hint { margin-top: calc(-1 * var(--sp-2)); }
+
+/* row notes that ask you to do something (get a tool first, keep output for later): plain text, no chips */
+.step-act { color: var(--text); }
+.act-tool { color: var(--accent); }
+.act-tool a { color: inherit; }
+.act-keep { color: var(--good); }
+.pat-txt { color: var(--accent); white-space: nowrap; }
+@media (max-width: 760px) { .controls .ctl-wide { flex-basis: 100%; } details.more > summary small { display: none; } }

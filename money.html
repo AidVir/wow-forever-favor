@@ -64,46 +64,66 @@
           <option value="1">100% (only seller)</option>
         </select>
       </div>
-      <div class="ctl"><label for="minprofit">Min profit per craft (silver)</label><input id="minprofit" type="number" min="0" step="1" value="0"></div>
-      <div class="ctl"><label for="minmargin">Min margin (%)</label><input id="minmargin" type="number" min="0" step="1" value="5"></div>
     </div>
-    <details class="more" open>
-      <summary>More options <small>gathering · patterns · time value · reliability</small></summary>
-      <div class="controls">
-        <div class="ctl">
-          <label for="ownmode">My own gathered reagents cost</label>
-          <select id="ownmode">
-            <option value="market">What I'd get selling them (recommended)</option>
-            <option value="free">Nothing (my farming time is free)</option>
-          </select>
-        </div>
-        <fieldset class="ctl profs mm-own">
-          <legend>I gather my own</legend>
-          <label><input type="checkbox" data-own="herb"> Herbs</label>
-          <label><input type="checkbox" data-own="ore"> Ore, stone &amp; gems</label>
-          <label><input type="checkbox" data-own="leather"> Leather, hides &amp; scales</label>
-          <label><input type="checkbox" data-own="cloth"> Cloth</label>
-          <label><input type="checkbox" data-own="fish"> Fish</label>
-        </fieldset>
-        <div class="ctl">
-          <label for="patterns">Recipes I can use</label>
-          <select id="patterns">
-            <option value="buyable">Trainer + patterns I can buy (AH, vendor)</option>
-            <option value="trainer">Trainer only</option>
-            <option value="all">Trainer + every pattern (I already own them)</option>
-          </select>
-        </div>
-        <div class="ctl"><label for="time">Time value per craft (silver)</label><input id="time" type="number" min="0" step="1" value="0"></div>
-        <div class="ctl"><label for="minsales">Min units sold in history</label><input id="minsales" type="number" min="0" step="1" value="5"></div>
-        <div class="ctl">
-          <span class="lbl">Options</span>
-          <label class="chk"><input id="neutral" type="checkbox"> Also buy reagents from Blackwater AH</label>
-          <label class="chk"><input id="rare" type="checkbox"> I can use rare stations (Black Anvil, Moonwell…)</label>
-          <label class="chk"><input id="risky" type="checkbox"> Show unreliable markets</label>
-          <label class="chk"><input id="all" type="checkbox"> Show unprofitable and below-threshold crafts</label>
+    <p class="hint" id="share-help">Your share: how much of each item's daily sales you expect to win against other sellers.</p>
+    <details class="more" data-remember="mm-more">
+      <summary>More options <small>gathering · recipes · filters</small></summary>
+      <div class="opt-group">
+        <h3 class="opt-h">Reagents</h3>
+        <div class="controls">
+          <fieldset class="ctl profs mm-own">
+            <legend>I gather my own</legend>
+            <label><input type="checkbox" data-own="herb"> Herbs</label>
+            <label><input type="checkbox" data-own="ore"> Ore, stone &amp; gems</label>
+            <label><input type="checkbox" data-own="leather"> Leather, hides &amp; scales</label>
+            <label><input type="checkbox" data-own="cloth"> Cloth</label>
+            <label><input type="checkbox" data-own="fish"> Fish</label>
+          </fieldset>
+          <div class="ctl ctl-wide">
+            <label for="ownmode">Count my own reagents at</label>
+            <select id="ownmode">
+              <option value="market">What selling them would get (recommended)</option>
+              <option value="free">Nothing (farming time is free)</option>
+            </select>
+          </div>
+          <div class="ctl">
+            <span class="lbl">Also buy from</span>
+            <label class="chk"><input id="neutral" type="checkbox"> Blackwater AH (neutral)</label>
+          </div>
         </div>
       </div>
-      <p class="hint" id="share-help">Your share is how much of each item's measured daily sales you expect to win while relisting against other sellers. Time value is charged per craft. Items that sold fewer units than the minimum are treated as unreliable once there is enough history.</p>
+      <div class="opt-group">
+        <h3 class="opt-h">Recipes</h3>
+        <div class="controls">
+          <div class="ctl ctl-wide">
+            <label for="patterns">Recipes I can use</label>
+            <select id="patterns">
+              <option value="buyable">Trainer + patterns I can buy (AH, vendor)</option>
+              <option value="trainer">Trainer only</option>
+              <option value="all">Trainer + every pattern (I already own them)</option>
+            </select>
+          </div>
+          <div class="ctl ctl-num"><label for="time">Time per craft (silver)</label><input id="time" type="number" min="0" step="1" value="0"></div>
+          <div class="ctl">
+            <span class="lbl">Stations</span>
+            <label class="chk"><input id="rare" type="checkbox"> I can use rare ones (Black Anvil, Moonwell…)</label>
+          </div>
+        </div>
+      </div>
+      <div class="opt-group">
+        <h3 class="opt-h">Filters</h3>
+        <div class="controls">
+          <div class="ctl ctl-num"><label for="minprofit">Min profit / craft (silver)</label><input id="minprofit" type="number" min="0" step="1" value="0"></div>
+          <div class="ctl ctl-num"><label for="minmargin">Min margin (%)</label><input id="minmargin" type="number" min="0" step="1" value="5"></div>
+          <div class="ctl ctl-num"><label for="minsales">Min units sold</label><input id="minsales" type="number" min="0" step="1" value="5"></div>
+          <div class="ctl">
+            <span class="lbl">Also show</span>
+            <label class="chk"><input id="risky" type="checkbox"> Unreliable markets</label>
+            <label class="chk"><input id="all" type="checkbox"> Unprofitable and filtered crafts</label>
+          </div>
+        </div>
+        <p class="hint">Markets with fewer units sold than the minimum count as unreliable once there is enough history.</p>
+      </div>
     </details>
   </section>
 
@@ -143,11 +163,18 @@
 
   <section class="panel" aria-label="Fishing spots" id="fishPanel" hidden>
     <div class="panel-head">
-      <div><h2>Fishing spots</h2><p>Where your fishing skill makes the most gold per hour, selling the catch on the AH up to your share of demand, cooking it when the dish pays more, and vendoring the rest.</p></div>
+      <div><h2>Fishing spots</h2><p>Where your fishing skill makes the most gold, with each fish sold, cooked or vendored, whichever pays.</p></div>
     </div>
     <div class="controls">
-      <div class="ctl"><label for="fishhours">Hours fishing per day</label><input id="fishhours" type="number" min="0.25" max="24" step="0.5" value="2"></div>
-      <div class="ctl"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
+      <div class="ctl ctl-wide">
+        <label for="fishuse">The catch</label>
+        <select id="fishuse">
+          <option value="best">Sell raw or cook it, whichever pays more</option>
+          <option value="cook">Cook everything I can, sell the dishes</option>
+          <option value="raw">Sell it all raw</option>
+        </select>
+      </div>
+      <div class="ctl ctl-num"><label for="fishhours">Hours per day</label><input id="fishhours" type="number" min="0.25" max="24" step="0.5" value="2"></div>
       <div class="ctl">
         <label for="pole">Fishing pole</label>
         <select id="pole">
@@ -158,16 +185,14 @@
           <option value="35">Arcanite Fishing Pole (+35)</option>
         </select>
       </div>
-      <div class="ctl"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60"></div>
-      <div class="ctl">
-        <label for="fishuse">The catch</label>
-        <select id="fishuse">
-          <option value="best">Sell raw or cook it, whichever pays more</option>
-          <option value="cook">Cook everything I can, sell the dishes</option>
-          <option value="raw">Sell it all raw</option>
-        </select>
-      </div>
     </div>
+    <details class="more" data-remember="mm-fish-more">
+      <summary>More fishing options <small>character level · seconds per cast</small></summary>
+      <div class="controls">
+        <div class="ctl ctl-num"><label for="level">Character level</label><input id="level" type="number" min="1" max="60" step="1" value="60"></div>
+        <div class="ctl ctl-num"><label for="castsec">Seconds per cast</label><input id="castsec" type="number" min="5" max="40" step="1" value="15"></div>
+      </div>
+    </details>
     <div class="plan-sum" id="fishSummary" aria-live="polite"></div>
     <div class="table-scroll">
       <table class="mm fishspots">

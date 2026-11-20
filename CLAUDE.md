@@ -222,7 +222,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
     `.intro-meta` holding `#status` (short: "Prices updated …") and `.pill#market`.
   - Answer first: `.hero` (big number + `.hero-alt` list of `.alt` rows), then the settings panel.
   - Settings: `.panel.settings` with the 2–4 controls people change most in `.controls`; everything
-    else goes in `<details class="more" open>` ("More options", open by default, + a `<small>` listing what's inside).
+    else goes in `<details class="more" data-remember="key">` ("More options", collapsed for first-time visitors, open/closed remembered per viewer by `common.js`, + a `<small>` listing what's inside). Split long drawers into `.opt-group` sections, each with an `h3.opt-h` heading.
   - Long explanations go in `<details class="explain">` (collapsed), not in fine print under tables.
   - `<footer class="site-foot"><div class="wrap foot">`: about, tools links, project links.
 - **Tables:**
