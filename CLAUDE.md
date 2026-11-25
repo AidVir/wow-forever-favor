@@ -129,7 +129,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   recipe got in the first pass (`usage`; 5 before that). Rank fees (`recipes.json` `ranks[prof]`, e.g.
   Journeyman 5s, Expert 50s, Artisan 5g; Cooking / First Aid higher ranks are books, no fee) are paid
   when the route reaches 75 / 150 / 225 and shown on the training rows. A time cost per craft is added (default 5s).
-- **Route modes** ("Route" select `#mode`, `state.mode`, saved as `lv:mode`, link key `m`; `plan(…, {mode, merge})`;
+- **Route modes** ("Route" select `#mode`, `state.mode`, saved as `lv:mode`, link key `m`; `plan(…, {mode, merge, sell})`;
   constants near the top of `leveling.js`):
   - `profit` ("Most profit"): the cheapest `per` at every point, switching freely, slow recipes allowed.
   - `afk` ("Fewer, longer steps", default, for crafting big batches AFK):
@@ -146,6 +146,23 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   - Measured 1–300 on EU PvP data (AH mode, steps incl. rank splits): afk 9–16 steps vs profit 11–32; afk
     costs 5–12% more in "ignore sales" mode. `render()` also plans `profit` (2 more passes, skipped when the
     shown passes took over 300 ms) and shows the difference under "Steps" in the summary.
+  - `quick` ("Fast AH sales (sell within a day)"): the `afk` machinery (`afk` is true for it), but planned for getting
+    gold back within a day. Constants `QUICK_*` next to `CROWD_DAYS`; `saleModel(book, quick)`:
+    - always sells on the AH (`sellMode()`; `plan` returns `sell`); "Plan the route for" and "Time to sell" are
+      disabled and show AH / 1 day (`#quickHint` explains), the saved `lv:sell` / `lv:wait` stay untouched;
+    - AH credit only for what sells within `QUICK_DAYS` (1): `rate(id)` = units off the AH per day × `QUICK_SHARE` (0.5),
+      × `QUICK_CROWD` (1) ÷ days of supply above 1 day, 0 above `QUICK_MAX_SUPPLY` (4) days or under `QUICK_MIN_SALES`
+      (2) a day; before `MIN_HOURS`, `QUICK_ABSORB` (10%) of what's listed. Price `QUICK_UNDERCUT` (3%) under
+      min(cheapest, avg sold), projected ¾ day, × 0.95. The rest is vendored;
+    - scoring only: an AH sale loses `QUICK_SLOW` (40%) per day it takes to sell (`value().days`, after what the route
+      already sells of it), so among similar costs the faster-selling craft wins; `AFK_RISK` still applies;
+    - each step row says how soon its output sells (`sellSpeed()`: "sells on the AH in ~6 h" / "N of M … vendor
+      the rest" / "vendor it"), the sell list shows hours; the summary splits AH-within-a-day income
+      (`p.ahIncome`) and vendor (`p.vendorRest`), and after drawing (`setTimeout`, `CMP_TOKEN`) plans `profit` and
+      `afk` on the AH over "Time to sell" for the "Waiting N days to sell" cell (`#vsOther`).
+    - Measured 1–300 (EU PvP, Horde, AH): median step sells in 0–6 h (afk 1–24 h, profit 0–39 h), spends
+      less up front (Tailoring 473g vs afk 812g, Leatherworking 530g vs 1,257g) and nets less (Tailoring −154g vs
+      −51g, Blacksmithing −171g vs +16g; Alchemy / Cooking about equal), 9–15 steps.
 - **Training ranks:** `RANKS` (75/150/225 caps, skill 50/125/200, level 10/20/35). Steps break at each
   cap, a "Train X" row is shown with `TRAINERS` (Forever Expert/Artisan trainers per faction), and
   "Character level" ends the route at the last rank that level can train. The shopping list says how
@@ -200,7 +217,7 @@ for smelting. Enchant trainer skills with no data are estimated and flagged `est
   `lots` as free lots (`owned: true`, no sale credit, so `takeInv` skips `unsell`); steps show "uses N from
   your bags", `renderOwned()` adds "have N" to the shopping list and lists unmatched lines under the box.
 - **Share link:** `planHash()` puts the settings in the URL hash (`#p=Tailoring&from=1&to=300&sell=ah&pat=…&f=…
-  &lvl=…&t=…&wait=…&m=afk|profit&mine=…&bw=…`, fishing `ff ft pole cast hv cook` in fishing modes, `ex` excluded
+  &lvl=…&t=…&wait=…&m=afk|profit|quick&mine=…&bw=…`, fishing `ff ft pole cast hv cook` in fishing modes, `ex` excluded
   recipe ids, `own=id x qty` joined by `.` when under 600 chars). `applyHash()` on load overrides and saves
   the settings (a link without `own` keeps the reader's own list; without `ex`, nothing is excluded);
   `syncHash()` in `render()` keeps the address current with `history.replaceState` once a plan hash exists or

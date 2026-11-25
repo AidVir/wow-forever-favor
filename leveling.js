@@ -13,7 +13,7 @@ const state = {
   time: store.get("lv:time", 5),
   level: store.get("lv:level", 60),
   // route shape: "afk" = fewer, longer steps (big batches); "profit" = cheapest recipe at every point
-  mode: (v => ["afk", "profit"].includes(v) ? v : "afk")(store.get("lv:mode", "afk")),
+  mode: (v => ["afk", "profit", "quick"].includes(v) ? v : "afk")(store.get("lv:mode", "afk")),
   sell: (v => ["ah", "vendor", "none"].includes(v) ? v : "ah")(store.get("lv:sell", "ah")),
   wait: (v => [1, 3, 7].includes(v) ? v : 3)(store.get("lv:wait", 3)),
   mining: store.get("lv:mining", false),
@@ -61,7 +61,7 @@ function levelCap() {
   const trained = RANKS.filter(k => state.level >= k.level).length; // ranks are in level order
   return [75, 150, 225, 300][trained];
 }
-// Two route modes ("Route" control, state.mode):
+// Three route modes ("Route" control, state.mode):
 // - "profit": the cheapest recipe at every skill point, switching freely, slow recipes allowed.
 // - "afk" (default): fewer, longer steps, for queueing big batches.
 //   * Recipes needing more than MAX_CRAFTS_PER_POINT crafts per point are skipped while a faster one exists
@@ -75,6 +75,8 @@ function levelCap() {
 //     the switch penalty over its run.
 //   * A step under AFK_MERGE (5) points goes to the step before or after it when that costs less than the
 //     switch penalty (found in the first pass, applied in the second: `merge`).
+// - "quick" ("Fast AH sales"): the "afk" route shape, but always selling on the AH, counting only what sells
+//   within a day at an undercut price, and preferring crafts that sell fastest (see QUICK_DAYS).
 const MAX_CRAFTS_PER_POINT = 3;
 const AFK_STICK = 0.45, AFK_MIN_RUN = 15, AFK_HORIZON = 40, AFK_SWITCH = 10, AFK_SLOW = 2, AFK_MERGE = 5, AFK_RISK = 0.1;
 const stickMin = s => 20 + s; // copper per point: 40c at skill 20, 1s 20c at 100, 2s 70c at 250
@@ -210,13 +212,23 @@ const AH_CUT = 0.95, SHARE = 0.5, MIN_HOURS = 6, ABSORB = 0.25;
 // Prices move while you level and sell: a falling price is projected to the middle of your selling time
 // (plus half a day to craft), and your share of sales shrinks when more than CROWD_DAYS of supply is listed.
 const CROWD_DAYS = 2;
+// "Fast AH sales" route mode (state.mode "quick"): an AH sale only counts if it clears within QUICK_DAYS,
+// whatever "Time to sell" says. You list QUICK_UNDERCUT below the lower of the cheapest listing and the
+// average sold price (then the 5% cut), so yours go first. You get QUICK_SHARE of what the AH takes per day,
+// less above QUICK_CROWD days of supply listed, none above QUICK_MAX_SUPPLY or when fewer than
+// QUICK_MIN_SALES units a day go: those markets don't sell fast. The rest is vendored. Before MIN_HOURS of
+// sales history: QUICK_ABSORB of the units listed now. In scoring (not in the totals) an AH sale loses
+// QUICK_SLOW of its value per day it takes to sell, so among similar costs the faster-selling craft wins.
+const QUICK_DAYS = 1, QUICK_UNDERCUT = 0.03, QUICK_SHARE = 0.5, QUICK_SLOW = 0.4, QUICK_CROWD = 1, QUICK_MAX_SUPPLY = 4, QUICK_MIN_SALES = 2, QUICK_ABSORB = 0.1;
+// the selling mode the page plans for: "Fast AH sales" always sells on the AH
+const sellMode = () => state.mode === "quick" ? "ah" : state.sell;
 let SALES = null, TRENDS = null;
 function salesInfo() {
   const fs = [state.faction, ...(state.neutral ? ["neutral"] : [])].map(f => SALES?.factions?.[f]).filter(Boolean);
   const hours = fs.length ? Math.min(...fs.map(f => f.hours || 0)) : 0;
   return { fs, hours, ok: hours >= MIN_HOURS };
 }
-function saleModel(book0) {
+function saleModel(book0, quick = false) {
   const info = salesInfo();
   const sold = new Map(), made = new Map();
   const stats = new Map();
@@ -229,22 +241,26 @@ function saleModel(book0) {
   };
   const trends = new Map();
   const trend = id => trends.has(id) ? trends.get(id) : trends.set(id, marketTrend(TRENDS, SALES, state.faction, id)).get(id);
-  const sellDays = state.wait / 2 + 0.5; // when the average unit sells: mid selling window, after crafting
+  const days = quick ? QUICK_DAYS : state.wait;
+  const sellDays = days / 2 + (quick ? 0.25 : 0.5); // when the average unit sells: mid selling window, after crafting
   const ahUnit = id => {
     const now = minPrice(book0, id), avg = stat(id).avg;
     const p = now != null && avg != null ? Math.min(now, avg) : now ?? avg;
-    return p == null ? null : Math.floor(projectPrice(p, trend(id), sellDays) * AH_CUT);
+    return p == null ? null : Math.floor(projectPrice(p * (quick ? 1 - QUICK_UNDERCUT : 1), trend(id), sellDays) * AH_CUT);
   };
   // days of supply on the AH: units listed / units sold per day
   const supplyDays = id => { const d = stat(id).perDay; const n = listed(book0, id); return d > 0 ? n / d : n > 0 ? Infinity : 0; };
+  // units a day you can expect to sell (your share of what the AH takes); null before MIN_HOURS of history
+  const rate = id => {
+    if (!info.ok) return null;
+    const d = stat(id).perDay, sd = supplyDays(id);
+    if (quick) return d < QUICK_MIN_SALES || sd > QUICK_MAX_SUPPLY ? 0 : d * (sd > QUICK_CROWD ? QUICK_SHARE * QUICK_CROWD / sd : QUICK_SHARE);
+    return d * (sd > CROWD_DAYS ? SHARE * CROWD_DAYS / sd : SHARE); // crowded market: you get less of it
+  };
   const cap = id => {
-    if (info.ok) {
-      const sd = supplyDays(id);
-      const share = sd > CROWD_DAYS ? SHARE * CROWD_DAYS / sd : SHARE; // crowded market: you get less of it
-      return Math.floor(stat(id).perDay * state.wait * share);
-    }
+    if (info.ok) return Math.floor(rate(id) * days);
     const n = listed(book0, id);
-    return n ? Math.max(2, Math.floor(n * ABSORB)) : 0;
+    return !n ? 0 : quick ? Math.max(1, Math.floor(n * QUICK_ABSORB)) : Math.max(2, Math.floor(n * ABSORB));
   };
   // value of selling `units` more of item id; commit=true records the sale
   function value(id, units, commit) {
@@ -253,14 +269,16 @@ function saleModel(book0) {
     const room = unit != null && unit > vend ? Math.max(0, cap(id) - (sold.get(id) || 0)) : 0;
     const onAh = Math.min(units, room);
     if (commit) { made.set(id, (made.get(id) || 0) + units); if (onAh) sold.set(id, (sold.get(id) || 0) + onAh); }
-    return { vendor: vend * units, ah: onAh * unit + (units - onAh) * vend, onAh, unit };
+    // days until these AH units sell on average, after what the route already sells of this item
+    const days = onAh && rate(id) ? ((sold.get(id) || 0) - (commit ? onAh : 0) + onAh / 2) / rate(id) : 0;
+    return { vendor: vend * units, ah: onAh * unit + (units - onAh) * vend, onAh, unit, days };
   }
   // a later step used `units` of what was made: they are not sold after all
   function unsell(id, units, onAh) {
     made.set(id, Math.max(0, (made.get(id) || 0) - units));
     sold.set(id, Math.max(0, (sold.get(id) || 0) - onAh));
   }
-  return { value, unsell, sold, made, ahUnit, stat, info, trend, supplyDays };
+  return { value, unsell, sold, made, ahUnit, stat, info, trend, supplyDays, rate, quick, days };
 }
 
 // --- fishing route --------------------------------------------------------------------------
@@ -297,7 +315,7 @@ function fishRoute(sales, want, cookWant = null) {
   const unit = id => {
     if (unitCache.has(id)) return unitCache.get(id);
     const v = sales.value(id, 1, false);
-    let u = state.sell === "ah" ? v.ah : state.sell === "vendor" ? v.vendor : 0;
+    let u = sales.sell === "ah" ? v.ah : sales.sell === "vendor" ? v.vendor : 0;
     if (want?.get(id) > 0) { const c = [minPrice(BOOK0, id), ITEMS[id]?.v].filter(x => x != null); if (c.length) u = Math.max(u, Math.floor(Math.min(...c) * 0.9)); }
     unitCache.set(id, u); return u;
   };
@@ -351,8 +369,9 @@ function fishRoute(sales, want, cookWant = null) {
 // spread over those points (at least 1), so a pattern bought for 2 crafts carries its full price.
 // `opts.mode`: "afk" or "profit" (see AFK_STICK; render() also plans "profit" to compare). `opts.merge`: skill
 // point -> recipe id, from the first pass: points of a tiny step that a neighbouring step's recipe takes over.
-function plan(future = null, usage = null, cookWant = null, { mode = state.mode, merge = null } = {}) {
-  const afk = mode !== "profit";
+function plan(future = null, usage = null, cookWant = null, { mode = state.mode, merge = null, sell = null } = {}) {
+  const afk = mode !== "profit", quick = mode === "quick"; // "quick" uses the "afk" step machinery
+  sell = quick ? "ah" : sell ?? state.sell;
   const trace = afk ? new Map() : null; // skill point -> {runs: recipe id -> cost per point, penalty} (for merging)
   const spread = r => Math.max(1, usage ? usage.get(r.id) ?? ONCE_SPREAD : ONCE_SPREAD);
   const prof = profData();
@@ -363,7 +382,7 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
   for (const r of [...prof.recipes, ...helpers]) if (r.item) (makers.get(r.item) || makers.set(r.item, []).get(r.item)).push(r);
   const learned = new Map(); // recipe id -> pattern info (charged once)
   const steps = []; const shopping = new Map(); let total = 0, stuck = null;
-  const sales = saleModel(BOOK0);
+  const sales = saleModel(BOOK0, quick); sales.sell = sell;
   let resaleVendor = 0, resaleAh = 0;
   const demand = new Map(); // reagents this route uses (for the next pass)
   const futureLeft = future ? new Map(future) : null;
@@ -386,7 +405,7 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
       return sum;
     },
   };
-  function lotUnit(l) { return l.owned ? 0 : l.fish && state.cookCatch ? l.vend : state.sell === "ah" ? l.ah : state.sell === "vendor" ? l.vend : 0; }
+  function lotUnit(l) { return l.owned ? 0 : l.fish && state.cookCatch ? l.vend : sell === "ah" ? l.ah : sell === "vendor" ? l.vend : 0; }
   function takeInv(id, n, user) {
     for (const l of lots.get(id) || []) {
       if (n <= 0) break;
@@ -420,9 +439,11 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
   // by what the market can absorb. An intermediate later steps need is worth what buying it would cost.
   function credit(r, cost, n) {
     let back = 0;
-    if (r.item && state.sell !== "none") {
+    if (r.item && sell !== "none") {
       const v = sales.value(r.item, r.qty * n, false);
-      back = state.sell === "ah" && v.onAh > 0 ? v.ah / n : Math.min(v.vendor / n, cost * 0.75);
+      back = sell === "ah" && v.onAh > 0 ? v.ah / n : Math.min(v.vendor / n, cost * 0.75);
+      // "quick": gold that comes back later is worth less; QUICK_SLOW of the AH sale per day it takes to sell
+      if (quick && v.onAh > 0) back -= v.onAh * v.unit * QUICK_SLOW * v.days / n;
     }
     const left = r.item ? futureLeft?.get(r.item) || 0 : 0;
     if (left > 0) {
@@ -552,7 +573,7 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
         }
         if (n <= 1) { n = 1; runCost = cost; }
         // AH sales are an estimate (and selling is work): in this mode they count AFK_RISK less
-        const cred = credit(r, runCost / n, n), net1 = runCost / n - cred * (state.sell === "ah" ? 1 - AFK_RISK : 1), cpp = n0 / h; // per craft; crafts per point
+        const cred = credit(r, runCost / n, n), net1 = runCost / n - cred * (sell === "ah" ? 1 - AFK_RISK : 1), cpp = n0 / h; // per craft; crafts per point
         cand.len = n < n0 ? Math.max(1, Math.floor(h * n / n0)) : h;
         cand.avg = (net1 >= 0 ? net1 * cpp : net1 / r.ups) + timeCost * cpp;
         cand.gross = (runCost / n + timeCost) * cpp; // what you spend per point, before sale credit: the switching scale
@@ -687,6 +708,8 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
     const n = sales.sold.get(id) || 0, unit = sales.ahUnit(id), vend = ITEMS[id]?.s || 0;
     return { id, made, n, unit, vend, stat: sales.stat(id), value: n * (unit || 0) + (made - n) * vend };
   }).sort((a, b) => b.value - a.value);
+  // AH sales (within the selling time) and what is vendored, over everything the route sells
+  const ahIncome = sellList.reduce((a, e) => a + e.n * (e.unit || 0), 0), vendorRest = sellList.reduce((a, e) => a + (e.made - e.n) * e.vend, 0);
   const capped = state.prof === FISHING ? null : !stuck && end < Math.min(300, state.to) ? end : null; // character level stops the route
   const feeOf = name => rankFees.find(f => f.name === name);
   // Fishing + Cooking: cooking steps that buy their reagents where a fish recipe would also give skill-ups:
@@ -708,7 +731,7 @@ function plan(future = null, usage = null, cookWant = null, { mode = state.mode,
       }
     }
   }
-  return { fish, fishWant, merge: mergeOut, steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
+  return { fish, fishWant, merge: mergeOut, steps, shopping: [...shopping.values()], total, resaleVendor, resaleAh, ahIncome, vendorRest, rate: sales.rate, sell, stuck, capped, rankFees, feeOf, book, sellList, salesInfo: sales.info, stat: sales.stat, trend: sales.trend, supplyDays: sales.supplyDays, demand,
     usage: steps.reduce((m, st) => m.set(st.r.id, (m.get(st.r.id) || 0) + (st.to - st.from)), new Map()) };
 }
 
@@ -727,7 +750,16 @@ function sellInfo(st, p) {
     : rate > 0 ? `~${perDay(rate)}/day off the AH, not above vendor` : "none sold";
   const tr = p.trend(st.r.item);
   const falling = tr && tr.perDay < -0.03 ? ` · price falling ${trendLabel(tr, true)}, priced for when you'd sell` : "";
-  return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note: note + falling };
+  return { ahBetter, vendorBetter: !ahBetter && st.vendor > 0, note: note + falling, speed: state.mode === "quick" ? sellSpeed(st, p) : "" };
+}
+// "Fast AH sales": how long the step's AH units take to sell at your share of what the AH takes a day
+const sellHours = (n, rate) => { const h = n / rate * 24; return h < 1 ? "under an hour" : `~${Math.round(h)} h`; };
+function sellSpeed(st, p) {
+  const forSale = Math.round(st.r.qty * st.crafts - st.kept), onAh = Math.round(st.onAh), rate = p.rate(st.r.item);
+  if (forSale <= 0) return "";
+  if (!onAh) return "vendor it: the AH won't take it within a day";
+  const when = rate ? ` in ${sellHours(onAh, rate)}` : " (guess from listings)";
+  return onAh < forSale ? `${onAh} of ${forSale} sell on the AH${when}, vendor the rest` : `sells on the AH${when}`;
 }
 // "Alternative" fact in a step's details: the runner-up recipe and what using it would change.
 function altFact(st) {
@@ -763,20 +795,21 @@ function learnText(st) {
   return `Learn at skill ${at}`;
 }
 const OPEN_STEPS = new Set(); // expanded step rows (not saved)
+let CMP_TOKEN = 0; // render() count: a deferred comparison from an older render is dropped
 
 const hrs = h => h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${Math.floor(h)} h ${String(Math.round((h % 1) * 60)).padStart(2, "0")} min`;
 // Fishing route table: one row per spot (and lure), with "Train" rows at each rank.
 function renderFish(p) {
-  const f = p.fish, retVendor = state.sell === "vendor";
-  $("#fishRetHead").textContent = retVendor ? "Vendor value" : state.sell === "none" ? "Catch (not counted)" : "AH value (est.)";
+  const f = p.fish, sell = sellMode(), retVendor = sell === "vendor";
+  $("#fishRetHead").textContent = retVendor ? "Vendor value" : sell === "none" ? "Catch (not counted)" : "AH value (est.)";
   const worth = f.steps.reduce((a, st) => a + (retVendor ? st.vendor : st.ah), 0);
   const lures = f.steps.reduce((a, st) => a + st.lureCost, 0);
   $("#fishSummary").innerHTML = `
     <div class="pick sum-main"><span class="eyebrow">Fishing ${f.from} → ${f.stuck ?? f.end}</span><b>${hrs(f.hours)}</b><small>${Math.round(f.casts).toLocaleString("en-GB")} casts at ${f.sec} s, ${Math.round(f.catches).toLocaleString("en-GB")} catches</small></div>
     <div class="sum-stats">
-      <div><span class="eyebrow">Catch worth</span><b>${state.sell === "none" ? "—" : gold(worth)}</b><small>${state.prof === FISH_COOK ? "after the fish kept for cooking" : retVendor ? "at the vendor" : "AH share + vendor (est.)"}</small></div>
+      <div><span class="eyebrow">Catch worth</span><b>${sell === "none" ? "—" : gold(worth)}</b><small>${state.prof === FISH_COOK ? "after the fish kept for cooking" : retVendor ? "at the vendor" : "AH share + vendor (est.)"}</small></div>
       <div><span class="eyebrow">Lures + ranks</span><b>${gold(f.cost)}</b><small>lures ${gold(lures)}</small></div>
-      <div><span class="eyebrow">Per hour</span><b>${state.sell === "none" || !f.hours ? "—" : pl((worth - f.cost) / f.hours)}</b><small>while leveling</small></div>
+      <div><span class="eyebrow">Per hour</span><b>${sell === "none" || !f.hours ? "—" : pl((worth - f.cost) / f.hours)}</b><small>while leveling</small></div>
     </div>`;
   $("#fishStuck").innerHTML = f.stuck != null ? `<p class="warn">Stops at ${f.stuck}: no spot your character level allows catches anything at this skill.</p>`
     : f.capped ? `<p class="warn">Stops at ${f.capped}: the next fishing rank needs character level ${FISH.ranks.find(k => k.cap - 75 === f.capped)?.level}. Change "Character level" under More options.</p>` : "";
@@ -802,7 +835,7 @@ function renderFish(p) {
       <td class="num">${Math.round(st.catches).toLocaleString("en-GB")}<small>${Math.round(st.casts).toLocaleString("en-GB")} casts</small></td>
       <td class="num">${hrs(st.hours)}</td>
       <td class="num">${st.lureCost ? gold(st.lureCost) : "—"}${st.lures ? `<small>${st.lures} × ${st.o.lure.mins} min</small>` : ""}</td>
-      <td class="num">${state.sell === "none" ? "—" : gold(val)}${st.lureCost ? `<small>${pl(val - st.lureCost)}</small>` : ""}</td></tr>`;
+      <td class="num">${sell === "none" ? "—" : gold(val)}${st.lureCost ? `<small>${pl(val - st.lureCost)}</small>` : ""}</td></tr>`;
   }).join("") + f.ranks.filter(k => !done.has(k.name)).map(rankRow).join("") || `<tr><td colspan="6" class="empty">Nothing to plan.</td></tr>`;
 }
 
@@ -866,16 +899,27 @@ function render() {
   const p1 = plan();
   const p = plan(p1.demand, p1.usage, p1.fishWant, { merge: p1.merge }); // second pass knows which intermediates the route needs later and how long each recipe is used
   const fishOnly = state.prof === FISHING, combined = state.prof === FISH_COOK;
-  // "Fewer, longer steps": what the "Most profit" route would gain over it (two more passes, skipped when slow)
-  const netOf = x => state.sell === "ah" ? x.resaleAh - x.total : state.sell === "vendor" ? x.resaleVendor - x.total : -x.total;
-  let vsProfit = null;
-  if (!fishOnly && state.mode === "afk" && performance.now() - t0 <= 300) { // about 150 ms a pass
+  // "Fewer, longer steps": what the "Most profit" route would gain over it; "Fast AH sales": what both other
+  // modes would gain, selling on the AH over "Time to sell" (two more passes each, skipped when slow)
+  const sell = sellMode(), quickMode = state.mode === "quick", token = ++CMP_TOKEN;
+  const netOf = x => x.sell === "ah" ? x.resaleAh - x.total : x.sell === "vendor" ? x.resaleVendor - x.total : -x.total;
+  const compare = (mode, since) => {
+    if (fishOnly || performance.now() - since > 300) return null; // about 50–150 ms a pass
     const keep = [BAGS, BOOK0]; // render reads both from the route it shows
-    const q1 = plan(null, null, null, { mode: "profit" });
-    const q = plan(q1.demand, q1.usage, q1.fishWant, { mode: "profit" });
+    const q1 = plan(null, null, null, { mode, sell });
+    const q = plan(q1.demand, q1.usage, q1.fishWant, { mode, sell, merge: q1.merge });
     [BAGS, BOOK0] = keep;
-    vsProfit = { extra: netOf(q) - netOf(p), steps: q.steps.length };
-  }
+    return { extra: netOf(q) - netOf(p), steps: q.steps.length };
+  };
+  const vsProfit = state.mode === "afk" ? compare("profit", t0) : null;
+  // "Fast AH sales" compares with both other modes (four passes) after the page has drawn the route
+  if (quickMode && !fishOnly) setTimeout(() => {
+    if (token !== CMP_TOKEN) return; // settings changed since
+    const t1 = performance.now(), vp = compare("profit", t1), va = compare("afk", t1), box = $("#vsOther");
+    if (!vp || !box) return;
+    box.innerHTML = `<span class="eyebrow">If you wait ${state.wait} day${state.wait > 1 ? "s" : ""} to sell instead</span><b>${pl(vp.extra)}</b><small>"Most profit", ${vp.steps} steps, sold over ${state.wait} day${state.wait > 1 ? "s" : ""}${va ? ` · ${pl(va.extra)} "Fewer, longer steps"` : ""}</small>`;
+    box.hidden = false;
+  }, 0);
   $("#fishPanel").hidden = !p.fish;
   $("#routePanel").hidden = $("#shopPanel").hidden = fishOnly;
   $("#fishCtl").hidden = !p.fish; $("#stationsCtl").hidden = fishOnly || !stations.length;
@@ -883,6 +927,10 @@ function render() {
   $("#fromLbl").textContent = combined ? "Cooking from skill" : "From skill";
   $("#toLbl").textContent = combined ? "Cooking to skill" : "To skill";
   if (p.fish) renderFish(p);
+  // "Fast AH sales" always sells on the AH within about a day: the selling controls show that and are locked
+  $("#sellmode").disabled = $("#wait").disabled = quickMode;
+  $("#sellmode").value = sell; $("#wait").value = quickMode ? "1" : String(state.wait);
+  $("#quickHint").hidden = !quickMode;
   // The answer for the chosen selling mode is the big number; the other totals sit beside it.
   const sums = {
     none: { big: `Materials${state.patterns !== "trainer" ? " + patterns" : ""} cost`, small: "Materials", val: pl(-p.total), sub: "what you spend" },
@@ -890,14 +938,17 @@ function render() {
     ah: { big: "Profit / loss if you sell on the AH", small: "If you sell on AH", val: pl(p.resaleAh - p.total), sub: `AH + vendor sales ${gold(p.resaleAh)} (est.)` },
   };
   if (fishOnly) { sums.none.big = "Lures + ranks cost"; sums.vendor.big = "Profit if you vendor the catch"; sums.ah.big = "Profit if you sell the catch on the AH"; }
-  const main = sums[state.sell] || sums.none;
+  if (quickMode) sums.ah.sub = `AH within a day ${gold(p.ahIncome)} + vendor ${gold(p.vendorRest)} (est.)`;
+  const main = sums[sell] || sums.none;
   const rest = ["none", "vendor", "ah"].filter(k => sums[k] !== main).map(k => sums[k]);
   $("#summary").innerHTML = `
     <div class="pick sum-main"><span class="eyebrow">${main.big}</span><b>${main.val}</b><small>${main.sub}</small></div>
     <div class="sum-stats">
       ${rest.map(x => `<div><span class="eyebrow">${x.small}</span><b>${x.val}</b><small>${x.sub}</small></div>`).join("")}
       ${fishOnly ? "" : `<div><span class="eyebrow">Steps</span><b>${p.steps.length}</b><small>${state.mode === "profit" ? "cheapest recipe at every point"
+        : quickMode ? "fewer, longer steps that sell fast"
         : vsProfit ? (vsProfit.extra > 0 ? `${gold(vsProfit.extra)} more than` : "no dearer than") + ` "Most profit" (${vsProfit.steps} steps)` : "fewer, longer steps"}</small></div>
+      ${quickMode && !fishOnly ? `<div id="vsOther" hidden></div>` : ""}
       <div><span class="eyebrow">Crafts</span><b>${p.steps.reduce((a, s) => a + s.crafts, 0).toLocaleString("en-GB")}</b></div>
       <div><span class="eyebrow">${combined ? "Cooking" : "Skill"}</span><b>${state.from} → ${p.stuck ? p.stuck.s : p.capped ?? state.to}</b></div>`}
       ${p.fish ? `<div><span class="eyebrow">Fishing</span><b>${p.fish.from} → ${p.fish.stuck ?? p.fish.end}</b><small>${hrs(p.fish.hours)} · ${Math.round(p.fish.catches).toLocaleString("en-GB")} catches</small></div>` : ""}
@@ -908,7 +959,7 @@ function render() {
 
   // Steps: the row shows what to craft, its reagents, cost and what you get back in the chosen mode.
   // Skill colours, the other selling mode, sales notes and recipe tags live in the expandable detail row.
-  const retVendor = state.sell === "vendor";
+  const retVendor = sell === "vendor";
   $("#retHead").textContent = retVendor ? "Vendor value" : "AH value (est.)";
   // When selling on the AH, the vendor value sits next to it so you can compare (the better one is green).
   const showVend = !retVendor;
@@ -944,7 +995,7 @@ function render() {
     let html = train + `<tr class="row${open ? " open" : ""}" data-key="${key}" tabindex="0" aria-expanded="${open}">
       <td class="num rng">${st.from}–${st.to}</td>
       <td class="c-craft"><b>${st.crafts} × ${name}</b>${learnTag(st)}<div class="meta">${reag}${r.needs ? ` · needs ${esc(r.needs)}` : ""}${toolsNeed.length ? ` · needs ${toolsNeed.map(esc).join(", ")}` : ""}</div>${
-        toolsGot.length || kept ? `<div class="meta step-act">${[toolsGot.length ? `<span class="act-tool">First: ${toolsGot.join(", ")}</span>` : "", kept ? `<span class="act-keep">Keep ${kept} for later steps</span>` : ""].filter(Boolean).join(" · ")}</div>` : ""}${used.length || fromBags ? `<div class="meta">${[fromBags ? "uses your bags" : "", used.length ? "uses earlier crafts" : ""].filter(Boolean).join(" · ")}</div>` : ""}</td>
+        toolsGot.length || kept ? `<div class="meta step-act">${[toolsGot.length ? `<span class="act-tool">First: ${toolsGot.join(", ")}</span>` : "", kept ? `<span class="act-keep">Keep ${kept} for later steps</span>` : ""].filter(Boolean).join(" · ")}</div>` : ""}${used.length || fromBags ? `<div class="meta">${[fromBags ? "uses your bags" : "", used.length ? "uses earlier crafts" : ""].filter(Boolean).join(" · ")}</div>` : ""}${s?.speed ? `<div class="meta">${s.speed}</div>` : ""}</td>
       <td class="num c-cost" data-label="Cost">${gold(st.cost)}${st.once ? `<small>incl. ${[st.patPaid ? (r.source === "trainer" ? "training " : "pattern ") + gold(st.patPaid) : "", st.once - st.patPaid > 0 ? "tools " + gold(st.once - st.patPaid) : ""].filter(Boolean).join(", ")}</small>` : ""}</td>
       ${vend}${ret}
       <td class="num c-x"><button class="x" data-ex="${r.id}" title="Exclude this recipe and re-plan" aria-label="Exclude ${esc(r.name)} and re-plan">✕</button></td>
@@ -976,10 +1027,10 @@ function render() {
   const n0 = x => x.toLocaleString("en-GB");
   $("#sell").innerHTML = p.sellList.length
     ? p.sellList.map(e => {
-        const days = e.n && e.stat.perDay ? e.n / (e.stat.perDay * SHARE) : 0;
+        const days = e.n && e.stat.perDay ? e.n / (e.stat.perDay * SHARE) : 0, rate = p.rate(e.id);
         return `<tr><td>${wh(e.id, ITEMS[e.id]?.n || e.id)}</td><td class="num">${n0(e.made)}</td>
           <td class="num">${si.ok ? perDay(e.stat.perDay) : '<span class="muted">collecting</span>'}<small>${n0(listed(BOOK0, e.id))} listed</small></td>
-          <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n && si.ok ? `<small>~${days < 1 ? "<1" : days.toFixed(1)} days</small>` : ""}</td>
+          <td class="num${e.n ? " better" : ""}">${n0(e.n)}${e.n && si.ok ? `<small>${state.mode === "quick" && rate ? sellHours(e.n, rate) : `~${days < 1 ? "<1" : days.toFixed(1)} days`}</small>` : ""}</td>
           <td class="num">${e.unit != null ? gold(e.unit) : "—"}${trendLabel(p.trend(e.id), true)}${e.stat.avg != null ? `<small>sold avg ${gold(Math.round(e.stat.avg))}</small>` : ""}${si.ok && p.supplyDays(e.id) > CROWD_DAYS ? `<small class="neg">${p.supplyDays(e.id) === Infinity ? "nothing sold" : Math.round(p.supplyDays(e.id)) + " days of supply listed"}</small>` : ""}</td>
           <td class="num">${gold(e.vend)}</td>
           <td class="num">${gold(e.value)}</td></tr>`;
@@ -1167,7 +1218,7 @@ function applyHash() {
   put("faction", pick("f", ["alliance", "horde"]), "faction");
   put("level", num("lvl", 1, 60)); put("time", num("t", 0, 1e6, false));
   const w = num("wait", 1, 7); put("wait", [1, 3, 7].includes(w) ? w : null);
-  put("mode", pick("m", ["afk", "profit"])); put("mining", bool("mine")); put("neutral", bool("bw"), "neutral");
+  put("mode", pick("m", ["afk", "profit", "quick"])); put("mining", bool("mine")); put("neutral", bool("bw"), "neutral");
   put("ffrom", num("ff", 1, 299)); put("fto", num("ft", 2, 300));
   const pole = num("pole", 0, 35); put("pole", POLES.includes(pole) ? pole : null);
   put("castSec", num("cast", 5, 40)); put("hourValue", num("hv", 0, 1e6, false)); put("cookCatch", bool("cook"));
